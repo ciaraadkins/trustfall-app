@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 51, 255, 51;
+  --background-rgb: 18, 18, 18;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+.glow-text {
+  text-shadow: 0 0 8px rgba(51, 255, 51, 0.7);
+}
+
+/* Grid pattern background */
+.bg-grid-pattern {
+  background-image: linear-gradient(rgba(51, 255, 51, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 255, 51, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Scan lines effect */
+.bg-scanline {
+  background: linear-gradient(to bottom, transparent 0%, rgba(51, 255, 51, 0.02) 50%, transparent 100%);
+  background-size: 100% 4px;
+  animation: scanlines 8s linear infinite;
+}
+
+@keyframes scanlines {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 100%;
+  }
+}
+
+/* Blinking cursor animation */
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+

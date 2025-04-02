@@ -1,0 +1,45 @@
+"use client"
+
+import { Database, TerminalSquare } from "lucide-react"
+import FirebaseSetupGuide from "./firebase-setup-guide"
+
+export default function FirebaseError() {
+  return (
+    <div className="bg-[#1F1F1F] border border-[#FF5555]/50 rounded-lg p-6 text-center">
+      <div className="flex flex-col items-center mb-4">
+        <div className="bg-[#FF5555]/20 p-3 rounded-full mb-3">
+          <TerminalSquare className="w-6 h-6 text-[#FF5555]" />
+        </div>
+        <h3 className="text-xl font-mono text-[#FF5555] mb-1">SYSTEM ERROR</h3>
+        <p className="text-sm text-[#ccc] mb-4">
+          Firebase configuration appears to be incomplete.
+        </p>
+      </div>
+
+      <div className="bg-[#2a2a2a] rounded-lg p-4 text-left mb-4">
+        <ol className="list-decimal pl-5 space-y-2 text-sm text-[#ccc]">
+          <li>
+            Make sure you have initialized Firebase correctly
+          </li>
+          <li>
+            Verify your API keys are properly set in the Firestore database
+          </li>
+          <li>
+            Check browser console for specific error messages
+          </li>
+        </ol>
+      </div>
+
+      <div className="mb-4">
+        <FirebaseSetupGuide />
+      </div>
+
+      <button
+        onClick={() => window.location.reload()}
+        className="bg-[#1e1e1e] border border-[#33FF33]/50 hover:border-[#33FF33] rounded text-center py-2 px-4 font-mono text-[#33FF33] transition-all duration-200"
+      >
+        TRY AGAIN
+      </button>
+    </div>
+  )
+}
