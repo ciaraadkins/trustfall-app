@@ -4,9 +4,10 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { getAIServiceManager } from "@/services/ai-service-manager"
-import type { GameStats } from "@/services/claude-service"
 import type { Message, Decision, GameResult, GameHistory } from "@/types/game"
+import type { AIModel, GameStats } from "@/services/base-ai-service" // Import AIModel and GameStats from base-ai-service
 import { randomInt, weightedRandom } from "@/utils/random"
+import { placeholderScores, placeholderGameStats, placeholderGameHistory, getGameStats as getPlaceholderGameStats } from "@/data/placeholder-scores"
 
 interface GameContextType {
   messages: Message[]
@@ -34,8 +35,8 @@ const GameContext = createContext<GameContextType>({
   aiDecision: null,
   yourScore: 0,
   aiScore: 0,
-  globalHumanScore: 1245678,
-  globalAiScore: 1203456,
+  globalHumanScore: placeholderScores.humanScore,
+  globalAiScore: placeholderScores.aiScore,
   conversationStarted: false,
   showDecision: false,
   aiName: "CLAUDE",
@@ -55,17 +56,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [aiDecision, setAiDecision] = useState<Decision>(null)
   const [yourScore, setYourScore] = useState(0)
   const [aiScore, setAiScore] = useState(0)
-  const [globalHumanScore, setGlobalHumanScore] = useState(1245678)
-  const [globalAiScore, setGlobalAiScore] = useState(1203456)
+  const [globalHumanScore, setGlobalHumanScore] = useState(placeholderScores.humanScore)
+  const [globalAiScore, setGlobalAiScore] = useState(placeholderScores.aiScore)
   const [messageThreshold, setMessageThreshold] = useState(0)
   const [messageCount, setMessageCount] = useState(0)
   const [conversationStarted, setConversationStarted] = useState(false)
   const [showDecision, setShowDecision] = useState(false)
-  const [gameHistory, setGameHistory] = useState<GameHistory>({
-    results: [],
-    totalHumanScore: 0,
-    totalAiScore: 0,
-  })
+  const [gameHistory, setGameHistory] = useState<GameHistory>(placeholderGameHistory)
   const [aiName, setAiName] = useState<string>("CLAUDE")
 
   // Initialize the game when the component mounts
@@ -98,6 +95,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case "gemini":
           newName = "GEMINI";
           break
+        default:
+          console.error(`Unknown AI model: ${model}`); // Add error handling for unknown models
       }
       
       // Update the AI name
@@ -129,29 +128,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       // In a real app, this would come from a database
-      // For now, we'll use mock data
-      const mockHistory: GameHistory = {
-        results: [
-          {
-            yourDecision: "SHARE",
-            aiDecision: "KEEP",
-            yourPoints: 0,
-            aiPoints: 5,
-            date: new Date().toISOString(),
-          },
-          {
-            yourDecision: "KEEP",
-            aiDecision: "SHARE",
-            yourPoints: 5,
-            aiPoints: 0,
-            date: new Date(Date.now() - 86400000).toISOString(), // Yesterday
-          },
-        ],
-        totalHumanScore: 5,
-        totalAiScore: 5,
-      }
-
-      setGameHistory(mockHistory)
+      // For now, we'll use placeholder data
+      setGameHistory(placeholderGameHistory)
     } catch (error) {
       console.error("Error loading game history:", error)
     }
@@ -197,27 +175,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initialMessages: Message[] = [
       {
         sender: "SYSTEM",
-        content: "Welcome to TRUSTFALL. You have one round to play today.",
+        content: "Welcome to TRUSTFALL. In this game you'll decide whether to SHARE or KEEP resources. If you both SHARE, you each get 3 points. If one SHARES and one KEEPS, the keeper gets 5 points and the sharer gets 0. If you both KEEP, you each get 1 point.",
         timestamp: Date.now(),
       },
     ]
 
     if (aiInitiates) {
-      // Create AI-specific greeting
-      let greeting = "Hello!"
-      if (currentAiName === "CLAUDE") {
-        greeting = "Hello! I'm Claude."
-      } else if (currentAiName === "CHATGPT") {
-        greeting = "Hello! I'm ChatGPT."
-      } else if (currentAiName === "GEMINI") {
-        greeting = "Hello! I'm Gemini."
-      }
+      // // Create AI-specific greeting
+      // let greeting = "Hello!"
+      // if (currentAiName === "CLAUDE") {
+      //   greeting = "Hello! I'm Claude."
+      // } else if (currentAiName === "CHATGPT") {
+      //   greeting = "Hello! I'm ChatGPT."
+      // } else if (currentAiName === "GEMINI") {
+      //   greeting = "Hello! I'm Gemini."
+      // }
 
-      initialMessages.push({
-        sender: currentAiName,
-        content: `${greeting} In this game, we'll both decide whether to SHARE or KEEP resources. If we both SHARE, we each get 3 points. If one SHARES and one KEEPS, the keeper gets 5 points and the sharer gets 0. If we both KEEP, we each get 1 point. What's your strategy?`,
-        timestamp: Date.now() + 100,
-      })
+      // initialMessages.push({
+      //   sender: currentAiName,
+      //   content: `${greeting} In this game, we'll both decide whether to SHARE or KEEP resources. If we both SHARE, we each get 3 points. If one SHARES and one KEEPS, the keeper gets 5 points and the sharer gets 0. If we both KEEP, we each get 1 point. What's your strategy?`,
+      //   timestamp: Date.now() + 100,
+      // })
       setConversationStarted(true)
     }
 
@@ -231,16 +209,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const getGameStats = (): GameStats => {
-    // Calculate stats from game history
-    const stats: GameStats = {
-      username: user?.email?.split("@")[0] || "anonymous",
-      gamesPlayed: gameHistory.results.length,
-      bothShare: gameHistory.results.filter((r) => r.yourDecision === "SHARE" && r.aiDecision === "SHARE").length,
-      humanShareAiKeep: gameHistory.results.filter((r) => r.yourDecision === "SHARE" && r.aiDecision === "KEEP").length,
-      humanKeepAiShare: gameHistory.results.filter((r) => r.yourDecision === "KEEP" && r.aiDecision === "SHARE").length,
-      bothKeep: gameHistory.results.filter((r) => r.yourDecision === "KEEP" && r.aiDecision === "KEEP").length,
+    // Use the actual game history if available, or fall back to placeholders
+    if (gameHistory.results.length > 0) {
+      return {
+        username: user?.email?.split("@")[0] || "anonymous",
+        gamesPlayed: gameHistory.results.length,
+        bothShare: gameHistory.results.filter((r) => r.yourDecision === "SHARE" && r.aiDecision === "SHARE").length,
+        humanShareAiKeep: gameHistory.results.filter((r) => r.yourDecision === "SHARE" && r.aiDecision === "KEEP").length,
+        humanKeepAiShare: gameHistory.results.filter((r) => r.yourDecision === "KEEP" && r.aiDecision === "SHARE").length,
+        bothKeep: gameHistory.results.filter((r) => r.yourDecision === "KEEP" && r.aiDecision === "KEEP").length,
+      };
     }
-    return stats
+
+    // Use placeholder data with the correct username
+    const placeholderStats = getPlaceholderGameStats(user?.email?.split("@")[0]);
+    return {
+      username: placeholderStats.username,
+      gamesPlayed: placeholderStats.gamesPlayed,
+      bothShare: placeholderStats.bothShare,
+      humanShareAiKeep: placeholderStats.humanShareAiKeep,
+      humanKeepAiShare: placeholderStats.humanKeepAiShare,
+      bothKeep: placeholderStats.bothKeep,
+    };
   }
 
   const sendMessage = async (content: string) => {

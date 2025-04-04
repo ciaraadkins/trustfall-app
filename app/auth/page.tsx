@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { Terminal, Mail, Lock, LogIn, AlertTriangle, ChevronLeft, Terminal2 } from "lucide-react"
+import { Terminal, Mail, Lock, LogIn, AlertTriangle, ChevronLeft, Monitor } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import FirebaseSetupGuide from "@/components/firebase-setup-guide"
@@ -160,7 +160,7 @@ export default function AuthPage() {
             onClick={handleGuestPlay}
             className="inline-flex items-center justify-center px-8 py-3 bg-[#1a1a1a] border border-[#33FF33]/30 hover:border-[#33FF33] rounded-lg text-[#33FF33] font-mono transition-all duration-200"
           >
-            <Terminal2 className="w-5 h-5 mr-2" />
+            <Monitor className="w-5 h-5 mr-2" />
             PLAY AS GUEST
           </button>
         </div>

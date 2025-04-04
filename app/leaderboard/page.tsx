@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { Trophy, Filter, Search, PlayCircle, Users } from "lucide-react"
+import { placeholderScores } from "@/data/placeholder-scores"
 
 type TimeFilter = "all" | "week" | "month"
 type AIFilter = "all" | "claude" | "chatgpt" | "gemini"
@@ -63,12 +64,12 @@ export default function LeaderboardPage() {
             <div className="flex justify-between items-center">
               <div className="text-center flex-1">
                 <div className="text-xs mb-1">HUMANS</div>
-                <div className="text-xl text-[#33FF33] font-bold">1,245,678</div>
+                <div className="text-xl text-[#33FF33] font-bold">{placeholderScores.humanScore.toLocaleString()}</div>
               </div>
               <div className="h-10 w-px bg-[#33FF33]/30"></div>
               <div className="text-center flex-1">
                 <div className="text-xs mb-1">AI</div>
-                <div className="text-xl text-[#FF5555] font-bold">1,203,456</div>
+                <div className="text-xl text-[#FF5555] font-bold">{placeholderScores.aiScore.toLocaleString()}</div>
               </div>
             </div>
           </div>

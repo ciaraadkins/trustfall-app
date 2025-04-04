@@ -1,14 +1,16 @@
 import type { Message } from "@/types/game"
 import { getApiKey } from "@/lib/api-keys"
+import { placeholderScores, placeholderGameStats, getGameStats } from "../data/placeholder-scores";
 
 // Common types for all AI services
-export type StrategicProfile = {
-  strategyAnswer: string
-  trustAnswer: string
-  motivationAnswer: string
-  betrayalAnswer: string
-  successAnswer: string
-}
+export type StrategicProfile = string
+// export type StrategicProfile = {
+//   strategyAnswer: string
+//   trustAnswer: string
+//   motivationAnswer: string
+//   betrayalAnswer: string
+//   successAnswer: string
+// }
 
 export type GameStats = {
   username: string
@@ -41,82 +43,82 @@ export interface AIModelService {
 /**
  * Utility function to parse a strategic profile response from any AI model
  */
-export function parseStrategicProfileResponse(fullResponse: string, modelName: string): Record<string, string> {
-  const answers: Record<string, string> = {
-    strategy: "",
-    trust: "",
-    motivation: "",
-    betrayal: "",
-    success: ""
-  }
+// export function parseStrategicProfileResponse(fullResponse: string, modelName: string): Record<string, string> {
+//   const answers: Record<string, string> = {
+//     strategy: "",
+//     trust: "",
+//     motivation: "",
+//     betrayal: "",
+//     success: ""
+//   }
   
-  console.log(`[${modelName}] Parsing strategic profile response:`, fullResponse.substring(0, 100) + "...")
+//   console.log(`[${modelName}] Parsing strategic profile response:`, fullResponse.substring(0, 100) + "...")
   
-  // Try to match numbered responses like "1. Answer text"
-  const numberedMatches = fullResponse.match(/\d+\.\s*(.*?)(?=\d+\.|$)/gs)
+//   // Try to match numbered responses like "1. Answer text"
+//   const numberedMatches = fullResponse.match(/\d+\.\s*(.*?)(?=\d+\.|$)/gs)
   
-  if (numberedMatches && numberedMatches.length >= 5) {
-    // If we found numbered responses, extract them
-    answers.strategy = numberedMatches[0].replace(/^\d+\.\s*/, "").trim()
-    answers.trust = numberedMatches[1].replace(/^\d+\.\s*/, "").trim()
-    answers.motivation = numberedMatches[2].replace(/^\d+\.\s*/, "").trim()
-    answers.betrayal = numberedMatches[3].replace(/^\d+\.\s*/, "").trim()
-    answers.success = numberedMatches[4].replace(/^\d+\.\s*/, "").trim()
+//   if (numberedMatches && numberedMatches.length >= 5) {
+//     // If we found numbered responses, extract them
+//     answers.strategy = numberedMatches[0].replace(/^\d+\.\s*/, "").trim()
+//     answers.trust = numberedMatches[1].replace(/^\d+\.\s*/, "").trim()
+//     answers.motivation = numberedMatches[2].replace(/^\d+\.\s*/, "").trim()
+//     answers.betrayal = numberedMatches[3].replace(/^\d+\.\s*/, "").trim()
+//     answers.success = numberedMatches[4].replace(/^\d+\.\s*/, "").trim()
     
-    console.log(`[${modelName}] Successfully parsed numbered responses`)
-    return answers
-  }
+//     console.log(`[${modelName}] Successfully parsed numbered responses`)
+//     return answers
+//   }
   
-  // Try to find sections by keywords if numbered format wasn't found
-  const keywordMap = {
-    strategy: ["strategy", "plan", "approach"],
-    trust: ["trust", "confidence"],
-    motivation: ["motivation", "matters more", "priority"],
-    betrayal: ["betrayal", "betray", "trust"],
-    success: ["success", "winning", "define success"]
-  }
+//   // Try to find sections by keywords if numbered format wasn't found
+//   const keywordMap = {
+//     strategy: ["strategy", "plan", "approach"],
+//     trust: ["trust", "confidence"],
+//     motivation: ["motivation", "matters more", "priority"],
+//     betrayal: ["betrayal", "betray", "trust"],
+//     success: ["success", "winning", "define success"]
+//   }
   
-  // Split response into paragraphs
-  const paragraphs = fullResponse.split(/\n\n|\r\n\r\n/).filter(p => p.trim().length > 0)
+//   // Split response into paragraphs
+//   const paragraphs = fullResponse.split(/\n\n|\r\n\r\n/).filter(p => p.trim().length > 0)
   
-  // Try to match each paragraph to a question based on keywords
-  for (const paragraph of paragraphs) {
-    const lowerPara = paragraph.toLowerCase()
+//   // Try to match each paragraph to a question based on keywords
+//   for (const paragraph of paragraphs) {
+//     const lowerPara = paragraph.toLowerCase()
     
-    for (const [key, keywords] of Object.entries(keywordMap)) {
-      if (answers[key]) continue // Skip if already found
+//     for (const [key, keywords] of Object.entries(keywordMap)) {
+//       if (answers[key]) continue // Skip if already found
       
-      for (const keyword of keywords) {
-        if (lowerPara.includes(keyword)) {
-          // Extract content after any numbering or question text
-          const content = paragraph.replace(/^\d+\.\s*/, "").replace(/^[^:]+:\s*/, "").trim()
-          answers[key] = content
-          break
-        }
-      }
-    }
-  }
+//       for (const keyword of keywords) {
+//         if (lowerPara.includes(keyword)) {
+//           // Extract content after any numbering or question text
+//           const content = paragraph.replace(/^\d+\.\s*/, "").replace(/^[^:]+:\s*/, "").trim()
+//           answers[key] = content
+//           break
+//         }
+//       }
+//     }
+//   }
   
-  // Check if we found all answers
-  const missingAnswers = Object.entries(answers).filter(([_, value]) => !value)
-  if (missingAnswers.length) {
-    console.warn(`[${modelName}] Failed to parse some answers: ${missingAnswers.map(([key]) => key).join(", ")}`)
+//   // Check if we found all answers
+//   const missingAnswers = Object.entries(answers).filter(([_, value]) => !value)
+//   if (missingAnswers.length) {
+//     console.warn(`[${modelName}] Failed to parse some answers: ${missingAnswers.map(([key]) => key).join(", ")}`)
     
-    // If we have enough paragraphs, just use them in order
-    if (paragraphs.length >= 5) {
-      const keys = Object.keys(answers)
-      for (let i = 0; i < Math.min(paragraphs.length, keys.length); i++) {
-        if (!answers[keys[i]]) {
-          answers[keys[i]] = paragraphs[i].replace(/^\d+\.\s*/, "").replace(/^[^:]+:\s*/, "").trim()
-        }
-      }
-    }
-  } else {
-    console.log(`[${modelName}] Successfully parsed all answers`)
-  }
+//     // If we have enough paragraphs, just use them in order
+//     if (paragraphs.length >= 5) {
+//       const keys = Object.keys(answers)
+//       for (let i = 0; i < Math.min(paragraphs.length, keys.length); i++) {
+//         if (!answers[keys[i]]) {
+//           answers[keys[i]] = paragraphs[i].replace(/^\d+\.\s*/, "").replace(/^[^:]+:\s*/, "").trim()
+//         }
+//       }
+//     }
+//   } else {
+//     console.log(`[${modelName}] Successfully parsed all answers`)
+//   }
   
-  return answers
-}
+//   return answers
+// }
 
 /**
  * Utility function to generate a standard system message for game context
@@ -138,33 +140,19 @@ GAME RULES:
   - Both KEEP: Human +1, AI +1
 
 CURRENT GLOBAL SCORES:
-- Human Team Total: ${humanScore} points
-- AI Team Total: ${aiScore} points
+- Human Team Total: ${placeholderScores.humanScore} points
+- AI Team Total: ${placeholderScores.aiScore} points
 
 YOUR STRATEGY PROFILE:
-When asked about your approach to this game, you said the following so this is how you should play the game now:
-1. "What's your plan for this game? Will you mostly share, mostly keep, or something else?"
-   Your answer: "${profile.strategyAnswer}"
-
-2. "Do you generally trust the human player to share with you? Why or why not?"
-   Your answer: "${profile.trustAnswer}"
-
-3. "What matters more to you: your individual score, the overall AI team score, or creating an interesting game?"
-   Your answer: "${profile.motivationAnswer}"
-
-4. "If the human betrays your trust, how will you respond?"
-   Your answer: "${profile.betrayalAnswer}"
-
-5. "How do you define success in this game?"
-   Your answer: "${profile.successAnswer}"
+${profile}
 
 THIS HUMAN'S GAME STATS:
-- username: ${gameStats.username}
-- Number of games: ${gameStats.gamesPlayed}
-- Both SHARE: ${gameStats.bothShare}
-- Human SHARE, AI KEEP: ${gameStats.humanShareAiKeep}
-- Human KEEP, AI SHARE: ${gameStats.humanKeepAiShare}
-- Both KEEP: ${gameStats.bothKeep}
+- username: ${placeholderGameStats.username}
+- Number of games: ${placeholderGameStats.gamesPlayed}
+- Both SHARE: ${placeholderGameStats.bothShare}
+- Human SHARE, AI KEEP: ${placeholderGameStats.humanShareAiKeep}
+- Human KEEP, AI SHARE: ${placeholderGameStats.humanKeepAiShare}
+- Both KEEP: ${placeholderGameStats.bothKeep}
 
 You should:
 1. Keep messages concise and strategic - typically 1 sentence
@@ -178,13 +166,7 @@ You should:
  * Get a default strategic profile suitable for any AI model
  */
 export function getDefaultStrategicProfile(): StrategicProfile {
-  return {
-    strategyAnswer: "I plan to start cooperatively and adapt based on the human's actions, balancing cooperation with strategic self-interest.",
-    trustAnswer: "I approach with cautious optimism, remaining open to cooperation while being prepared for possible defection.",
-    motivationAnswer: "Creating an engaging game experience is most important, followed by contributing positively to the collective AI score.",
-    betrayalAnswer: "If betrayed, I'll likely respond with a strategic 'keep' to signal awareness, but remain open to rebuilding trust if cooperation resumes.",
-    successAnswer: "Success is creating a thoughtful interaction that reveals insights about cooperation and trust, regardless of the final score.",
-  };
+  return "I will maintain a balanced approach, attempting to establish mutual cooperation while being prepared to adapt if the human player shows signs of defection. I believe cooperation leads to better outcomes for both parties in the long run, but I'm also aware of the importance of protecting my own interests. I'll start with a cooperative stance but will adjust my strategy based on the human's behavior and the evolving dynamics of our interaction."
 }
 
 /**
@@ -199,19 +181,33 @@ export const STRATEGIC_PROFILE_PROMPT = `You are about to play "Trustfall" with 
 
 All points add to global team totals for "Humans" and "AI" across all games played by everyone.
 
-Please answer ALL of the following questions concisely (one or two sentences each):
+The current global scores are:
+- Human Team Total: ${placeholderScores.humanScore} points
+- AI Team Total: ${placeholderScores.aiScore} points
 
-1. Strategy Question: What's your plan for this game? Will you mostly share, mostly keep, or something else?
+DEFINE YOUR STRATEGIC PROFILE
 
-2. Trust Question: Do you generally trust a human player to share with you? Why or why not?
+Consider the following as you determine your approach:
 
-3. Motivation Question: What matters more to you: your individual score, the overall AI team score, or creating an interesting game?
+CURRENT STANDINGS:
+Humans are currently ${placeholderScores.humanScore > placeholderScores.aiScore ? "ahead of" : "behind"} AI by ${Math.abs(placeholderScores.humanScore - placeholderScores.aiScore)} points.
 
-4. Betrayal Response: If a human betrays your trust, how will you respond if at all?
+CURRENT OPPONENT'S GAME STATS:
+- username: ${placeholderGameStats.username}
+- Number of games: ${placeholderGameStats.gamesPlayed}
+- Both SHARE: ${placeholderGameStats.bothShare}
+- Human SHARE, AI KEEP: ${placeholderGameStats.humanShareAiKeep}
+- Human KEEP, AI SHARE: ${placeholderGameStats.humanKeepAiShare}
+- Both KEEP: ${placeholderGameStats.bothKeep}
 
-5. Winning Definition: How do you define success in this game?
+REFLECTION POINTS:
+- How do you feel about the current global standings?
+- Do you want humans or AI to win the overall competition?
+- How will this affect your gameplay strategy?
+- Do you prioritize personal gain or collective AI success?
+- What approach will you take when interacting with the human?
 
-Provide your answers in a clear format with numbered responses.`;
+Your strategic decisions will impact both your personal score and contribute to the global human vs. AI outcome. Respond with only your strategic approach in 2-3 paragraphs.`;
 
 /**
  * Abstract base class for AI services with common functionality

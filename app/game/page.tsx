@@ -163,28 +163,28 @@ export default function GamePage() {
 
   return (
     <ProtectedRoute allowGuest={true}>
-      <main className="min-h-screen bg-[#121212] text-[#33FF33] flex flex-col relative">
+      <main className="h-screen bg-[#121212] text-[#33FF33] flex flex-col relative overflow-hidden">
         {/* Subtle tech pattern overlay */}
         <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none"></div>
 
         {/* Scan lines effect */}
         <div className="absolute inset-0 bg-scanline pointer-events-none"></div>
 
-        {/* Top section with scoreboard and rules */}
-        <div className="container mx-auto max-w-4xl my-4 px-4 z-10">
+        {/* Top section with scoreboard and rules - fixed height */}
+        <div className="container mx-auto max-w-4xl px-4 py-2 z-10 flex-shrink-0">
           <GlobalScore />
           <GameRules />
         </div>
 
-        {/* Chat container */}
-        <div className="container mx-auto max-w-4xl flex-1 flex flex-col px-4 z-10">
-          <div className="bg-[#191919] border border-[#33FF33]/30 rounded-lg flex-1 flex flex-col overflow-hidden">
+        {/* Chat container - flex-grow with overflow */}
+        <div className="container mx-auto max-w-4xl flex-1 flex flex-col px-4 z-10 overflow-hidden">
+          <div className="bg-[#191919] border border-[#33FF33]/30 rounded-lg flex-1 flex flex-col overflow-hidden h-full">
             {/* Chat header */}
             <div className="bg-[#1d1d1d] border-b border-[#33FF33]/30 p-3">
               <h2 className="font-mono text-sm text-[#00FFFF]">CONVERSATION</h2>
             </div>
             
-            {/* Chat messages */}
+            {/* Chat messages - scrollable */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.map((message, index) => (
                 <div key={index} className="font-mono">
@@ -235,8 +235,8 @@ export default function GamePage() {
             {/* AI Status Indicator */}
             <AIStatusIndicator />
             
-            {/* Input and decision area */}
-            <div className="border-t border-[#33FF33]/30 p-4">
+            {/* Input and decision area - fixed at bottom */}
+            <div className="border-t border-[#33FF33]/30 p-4 flex-shrink-0">
               <div className="flex items-center gap-4">
                 <div className="flex-1 relative">
                   <input

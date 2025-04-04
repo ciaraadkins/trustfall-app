@@ -4,7 +4,7 @@ import {
   type AIModel, 
   type GameStats, 
   type StrategicProfile,
-  parseStrategicProfileResponse,
+  // parseStrategicProfileResponse,
   generateSystemMessage,
   getDefaultStrategicProfile,
   STRATEGIC_PROFILE_PROMPT
@@ -75,16 +75,17 @@ export class OpenAIService extends BaseAIService {
       console.log("[OpenAI] Received full strategic profile response");
       
       // Parse the response to extract each answer
-      const answers = parseStrategicProfileResponse(fullResponse, "OpenAI");
+      // const answers = parseStrategicProfileResponse(fullResponse, "OpenAI");
       
       // Create the strategic profile
-      const profile: StrategicProfile = {
-        strategyAnswer: answers.strategy || getDefaultStrategicProfile().strategyAnswer,
-        trustAnswer: answers.trust || getDefaultStrategicProfile().trustAnswer,
-        motivationAnswer: answers.motivation || getDefaultStrategicProfile().motivationAnswer,
-        betrayalAnswer: answers.betrayal || getDefaultStrategicProfile().betrayalAnswer,
-        successAnswer: answers.success || getDefaultStrategicProfile().successAnswer,
-      };
+      const profile: StrategicProfile = fullResponse || getDefaultStrategicProfile();
+      // {
+      //   strategyAnswer: answers.strategy || getDefaultStrategicProfile().strategyAnswer,
+      //   trustAnswer: answers.trust || getDefaultStrategicProfile().trustAnswer,
+      //   motivationAnswer: answers.motivation || getDefaultStrategicProfile().motivationAnswer,
+      //   betrayalAnswer: answers.betrayal || getDefaultStrategicProfile().betrayalAnswer,
+      //   successAnswer: answers.success || getDefaultStrategicProfile().successAnswer,
+      // };
 
       console.log("[OpenAI] Generated strategic profile:", profile);
 

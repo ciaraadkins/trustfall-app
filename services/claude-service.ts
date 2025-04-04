@@ -4,7 +4,6 @@ import {
   type AIModel, 
   type GameStats, 
   type StrategicProfile,
-  parseStrategicProfileResponse,
   generateSystemMessage,
   getDefaultStrategicProfile,
   STRATEGIC_PROFILE_PROMPT
@@ -99,17 +98,8 @@ export class ClaudeService extends BaseAIService {
       
       console.log("[Claude] Received full strategic profile response");
       
-      // Parse the response to extract each answer
-      const answers = parseStrategicProfileResponse(fullResponseText, "Claude");
-
-      // Create the strategic profile
-      const profile: StrategicProfile = {
-        strategyAnswer: answers.strategy || getDefaultStrategicProfile().strategyAnswer,
-        trustAnswer: answers.trust || getDefaultStrategicProfile().trustAnswer,
-        motivationAnswer: answers.motivation || getDefaultStrategicProfile().motivationAnswer,
-        betrayalAnswer: answers.betrayal || getDefaultStrategicProfile().betrayalAnswer,
-        successAnswer: answers.success || getDefaultStrategicProfile().successAnswer,
-      };
+      // Use the full response as the strategic profile
+      const profile: StrategicProfile = fullResponseText || getDefaultStrategicProfile();
 
       console.log("[Claude] Generated strategic profile:", profile);
 

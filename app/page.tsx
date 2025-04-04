@@ -5,6 +5,7 @@ import { PlayCircle, Terminal } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
+import { placeholderScores } from "@/data/placeholder-scores"
 
 export default function Home() {
   const { user } = useAuth()
@@ -30,12 +31,12 @@ export default function Home() {
         <div className="w-full flex justify-between items-center mb-12">
           <div className="text-center flex-1 p-8 rounded-xl transition-all duration-300 hover:bg-[#33FF33]/5">
             <div className="text-2xl mb-3 font-mono text-[#33FF33]/90">HUMANS</div>
-            <div className="text-7xl text-[#33FF33] font-bold font-mono glow-text animate-pulse-subtle">1,245,678</div>
+            <div className="text-7xl text-[#33FF33] font-bold font-mono glow-text animate-pulse-subtle">{placeholderScores.humanScore.toLocaleString()}</div>
           </div>
           <div className="h-32 w-px bg-[#33FF33]/30 mx-4"></div>
           <div className="text-center flex-1 p-8 rounded-xl transition-all duration-300 hover:bg-[#FF5555]/5">
             <div className="text-2xl mb-3 font-mono text-[#FF5555]/90">AI</div>
-            <div className="text-7xl text-[#FF5555] font-bold font-mono glow-text animate-pulse-subtle">1,203,456</div>
+            <div className="text-7xl text-[#FF5555] font-bold font-mono glow-text animate-pulse-subtle">{placeholderScores.aiScore.toLocaleString()}</div>
           </div>
         </div>
 
