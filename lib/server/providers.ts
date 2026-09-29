@@ -5,7 +5,6 @@ import OpenAI from "openai"
 import type { ReasoningEffort } from "openai/resources/shared"
 import { MODELS, resolveApiModel, type Provider } from "@/lib/models"
 import type { ChatTurn } from "@/lib/game/messages"
-import { DECISION_JSON_SCHEMA, parseDecision, type DecisionOutput } from "@/lib/game/schemas"
 import type { AIModel } from "@/types/game"
 
 /** An error whose message is safe to show the player. */
@@ -23,9 +22,11 @@ type CompletionRequest = {
   system: string
   turns: ChatTurn[]
   maxTokens: number
-  /** Constrain the reply to the SHARE/KEEP decision schema. */
-  structured?: boolean
+  /** Constrain the reply to a JSON schema. */
+  format?: StructuredFormat
 }
+
+export type StructuredFormat = { name: string; schema: Record<string, unknown> }
 
 const API_KEY_ENV: Record<Provider, string> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -60,7 +61,7 @@ async function completeWithClaude(apiModel: string, req: CompletionRequest): Pro
   const options = claudeOptions(apiModel)
   const outputConfig: Anthropic.OutputConfig = {}
   if (options.effort) outputConfig.effort = options.effort
-  if (req.structured) outputConfig.format = { type: "json_schema", schema: DECISION_JSON_SCHEMA }
+  if (req.format) outputConfig.format = { type: "json_schema", schema: req.format.schema }
 
   const response = await anthropicClient.messages.create({
     model: apiModel,
@@ -75,8 +76,8 @@ async function completeWithClaude(apiModel: string, req: CompletionRequest): Pro
   if (response.stop_reason === "refusal") {
     throw new GameError("Claude declined to respond. Try rephrasing your message.", 502)
   }
-  if (req.structured && response.stop_reason === "max_tokens") {
-    throw new GameError("Claude's decision was cut off.", 502, true)
+  if (req.format && response.stop_reason === "max_tokens") {
+    throw new GameError("Claude's response was cut off.", 502, true)
   }
 
   return response.content
@@ -97,8 +98,8 @@ async function completeWithOpenAI(apiModel: string, req: CompletionRequest): Pro
     input: req.turns,
     max_output_tokens: req.maxTokens,
     ...(process.env.OPENAI_REASONING_EFFORT === "off" ? {} : { reasoning: { effort } }),
-    ...(req.structured
-      ? { text: { format: { type: "json_schema", name: "decision", schema: DECISION_JSON_SCHEMA, strict: true } } }
+    ...(req.format
+      ? { text: { format: { type: "json_schema", name: req.format.name, schema: req.format.schema, strict: true } } }
       : {}),
   })
 
@@ -143,27 +144,29 @@ async function complete(model: AIModel, req: CompletionRequest): Promise<string>
   }
 }
 
-export async function generateText(model: AIModel, req: Omit<CompletionRequest, "structured">): Promise<string> {
+export async function generateText(model: AIModel, req: Omit<CompletionRequest, "format">): Promise<string> {
   const text = await complete(model, req)
   if (!text) throw new GameError(`${MODELS[model].displayName} sent an empty reply. Try again.`, 502, true)
   return text
 }
 
-/** Get a structured decision, retrying once on a retryable or malformed response. */
-export async function generateDecision(
+/** Get structured output, retrying once on a retryable or malformed response. */
+export async function generateStructured<T>(
   model: AIModel,
-  req: Omit<CompletionRequest, "structured">,
-): Promise<DecisionOutput> {
+  req: Omit<CompletionRequest, "format">,
+  format: StructuredFormat,
+  parse: (text: string) => T,
+): Promise<T> {
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return parseDecision(await complete(model, { ...req, structured: true }))
+      return parse(await complete(model, { ...req, format }))
     } catch (error) {
       if (error instanceof GameError && !error.retryable) throw error
       lastError = error
     }
   }
   if (lastError instanceof GameError) throw lastError
-  console.error(`[${model}] invalid decision output`, lastError)
-  throw new GameError(`${MODELS[model].displayName} didn't return a valid decision. Try again.`, 502)
+  console.error(`[${model}] invalid ${format.name} output`, lastError)
+  throw new GameError(`${MODELS[model].displayName} didn't return a valid response. Try again.`, 502)
 }

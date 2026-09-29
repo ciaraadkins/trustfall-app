@@ -10,7 +10,7 @@ export type ModelConfig = {
   envVar: string
   displayName: string
   description: string
-  maxTokens: { chat: number; decision: number }
+  maxTokens: { turn: number; decision: number }
 }
 
 export const MODELS: Record<AIModel, ModelConfig> = {
@@ -21,8 +21,8 @@ export const MODELS: Record<AIModel, ModelConfig> = {
     envVar: "CLAUDE_MODEL",
     displayName: "CLAUDE",
     description: "Anthropic's helpful, harmless, and honest AI assistant.",
-    // Thinking is turned off for Claude chat turns, so these budgets are output only.
-    maxTokens: { chat: 150, decision: 300 },
+    // Thinking is turned off for Claude, so these budgets are output only (a 1-sentence message plus JSON).
+    maxTokens: { turn: 300, decision: 300 },
   },
   openai: {
     id: "openai",
@@ -31,8 +31,8 @@ export const MODELS: Record<AIModel, ModelConfig> = {
     envVar: "OPENAI_MODEL",
     displayName: "CHATGPT",
     description: "OpenAI's versatile language model with broad knowledge.",
-    // Reasoning tokens count against max_output_tokens, so leave headroom beyond the 1-sentence reply.
-    maxTokens: { chat: 1000, decision: 1000 },
+    // Reasoning tokens count against max_output_tokens, so leave headroom beyond the short JSON reply.
+    maxTokens: { turn: 1000, decision: 1000 },
   },
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildProfilePrompt, buildSystemPrompt, welcomeMessage } from "@/lib/game/prompts"
+import { buildProfilePrompt, buildSystemPrompt, buildTurnContext, welcomeMessage } from "@/lib/game/prompts"
 import { EMPTY_SESSION_STATS } from "@/lib/game/scoring"
 
 const stats = {
@@ -50,9 +50,52 @@ describe("welcomeMessage", () => {
 })
 
 describe("chat rules", () => {
-  it("tells the model the decision is secret and to write plain text", () => {
+  it("explains the open chat, budget, lock-ins, and output fields", () => {
     const prompt = buildSystemPrompt("p", stats)
-    expect(prompt).toContain("made separately and in secret")
+    expect(prompt).toContain("There are no turns")
+    expect(prompt).toContain("at most 5 messages")
+    expect(prompt).toContain("A lock-in is final and secret")
+    expect(prompt).toContain('"immediate"')
+    expect(prompt).toContain("followUp")
     expect(prompt).toContain("no markdown")
+  })
+})
+
+describe("buildTurnContext", () => {
+  const base = {
+    messages: [
+      { sender: "YOU" as const, content: "hi", timestamp: 10_000 },
+      { sender: "AI" as const, content: "hey", timestamp: 20_000 },
+    ],
+    now: 45_000,
+    trigger: "human_quiet" as const,
+    humanLockedIn: false,
+    aiLockIn: null,
+    mustLockIn: false,
+  }
+
+  it("says why the AI is asked and how long it's been", () => {
+    const context = buildTurnContext(base)
+    expect(context).toMatch(/^\[GAME UPDATE\]/)
+    expect(context).toContain("The human has been quiet for 35 seconds.")
+    expect(context).toContain("Your last message: 25s ago.")
+    expect(context).toContain("you: 4 of 5, the human: 4 of 5")
+  })
+
+  it("handles an empty chat", () => {
+    expect(buildTurnContext({ ...base, messages: [] })).toContain("The human hasn't said anything yet.")
+  })
+
+  it("reports lock-ins and required lock-ins", () => {
+    const context = buildTurnContext({ ...base, humanLockedIn: true, aiLockIn: "KEEP", mustLockIn: false })
+    expect(context).toContain("The human has locked in (you don't know their choice).")
+    expect(context).toContain("You have locked in KEEP.")
+    expect(buildTurnContext({ ...base, mustLockIn: true })).toContain("You must lock in now.")
+  })
+
+  it("warns about the last message", () => {
+    const four = Array.from({ length: 4 }, (_, i) => ({ sender: "AI" as const, content: "x", timestamp: i }))
+    expect(buildTurnContext({ ...base, messages: four })).toContain("This is your last message")
+    expect(buildTurnContext({ ...base, messages: [...four, four[0]] })).toContain("You have no messages left")
   })
 })

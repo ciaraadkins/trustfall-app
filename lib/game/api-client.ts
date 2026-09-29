@@ -1,24 +1,16 @@
-import type { AIModel, Choice, Message, SessionStats } from "@/types/game"
+import type { TurnRequest, TurnResponse } from "./schemas"
 
-type GamePayload = {
-  model: AIModel
-  roundId: string
-  messages: Message[]
-  sessionStats: SessionStats
-}
-
-async function post<T>(path: string, payload: GamePayload): Promise<T> {
+export async function requestTurn(payload: TurnRequest, signal?: AbortSignal): Promise<TurnResponse> {
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch("/api/game/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...payload,
-        messages: payload.messages.map(({ sender, content }) => ({ sender, content })),
-      }),
+      body: JSON.stringify(payload),
+      signal,
     })
-  } catch {
+  } catch (error) {
+    if ((error as Error).name === "AbortError") throw error
     throw new Error("Network error. Check your connection and try again.")
   }
 
@@ -26,15 +18,5 @@ async function post<T>(path: string, payload: GamePayload): Promise<T> {
   if (!response.ok) {
     throw new Error(data?.error ?? `Request failed (${response.status}).`)
   }
-  return data as T
-}
-
-export async function requestReply(payload: GamePayload): Promise<string> {
-  const { reply } = await post<{ reply: string }>("/api/game/message", payload)
-  return reply
-}
-
-export async function requestDecision(payload: GamePayload): Promise<Choice> {
-  const { decision } = await post<{ decision: Choice }>("/api/game/decide", payload)
-  return decision
+  return data as TurnResponse
 }

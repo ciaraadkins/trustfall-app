@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { gameRequestSchema, parseDecision } from "@/lib/game/schemas"
+import { parseDecision, parseTurn, turnRequestSchema } from "@/lib/game/schemas"
 import { EMPTY_SESSION_STATS } from "@/lib/game/scoring"
 
 describe("parseDecision", () => {
@@ -29,31 +29,56 @@ describe("parseDecision", () => {
   })
 })
 
-describe("gameRequestSchema", () => {
+describe("turnRequestSchema", () => {
   const valid = {
     model: "claude",
     roundId: "round-1",
-    messages: [{ sender: "YOU", content: "hi" }],
+    messages: [{ sender: "YOU", content: "hi", timestamp: 1 }],
     sessionStats: EMPTY_SESSION_STATS,
+    now: 2,
+    trigger: "human_message",
+    humanLockedIn: false,
+    aiLockIn: null,
+    mustLockIn: false,
   }
 
   it("accepts a valid request", () => {
-    expect(gameRequestSchema.safeParse(valid).success).toBe(true)
+    expect(turnRequestSchema.safeParse(valid).success).toBe(true)
   })
 
   it("rejects models that aren't built yet", () => {
-    expect(gameRequestSchema.safeParse({ ...valid, model: "gemini" }).success).toBe(false)
+    expect(turnRequestSchema.safeParse({ ...valid, model: "gemini" }).success).toBe(false)
   })
 
   it("rejects unknown senders and oversized messages", () => {
-    expect(gameRequestSchema.safeParse({ ...valid, messages: [{ sender: "CLAUDE", content: "x" }] }).success).toBe(false)
+    expect(turnRequestSchema.safeParse({ ...valid, messages: [{ sender: "CLAUDE", content: "x", timestamp: 1 }] }).success).toBe(false)
     expect(
-      gameRequestSchema.safeParse({ ...valid, messages: [{ sender: "YOU", content: "x".repeat(2001) }] }).success,
+      turnRequestSchema.safeParse({ ...valid, messages: [{ sender: "YOU", content: "x".repeat(2001), timestamp: 1 }] }).success,
     ).toBe(false)
   })
 
+  it("rejects unknown triggers", () => {
+    expect(turnRequestSchema.safeParse({ ...valid, trigger: "whenever" }).success).toBe(false)
+  })
+
   it("rejects negative or fractional stats", () => {
-    expect(gameRequestSchema.safeParse({ ...valid, sessionStats: { ...EMPTY_SESSION_STATS, humanTotal: -1 } }).success).toBe(false)
-    expect(gameRequestSchema.safeParse({ ...valid, sessionStats: { ...EMPTY_SESSION_STATS, bothKeep: 1.5 } }).success).toBe(false)
+    expect(turnRequestSchema.safeParse({ ...valid, sessionStats: { ...EMPTY_SESSION_STATS, humanTotal: -1 } }).success).toBe(false)
+    expect(turnRequestSchema.safeParse({ ...valid, sessionStats: { ...EMPTY_SESSION_STATS, bothKeep: 1.5 } }).success).toBe(false)
+  })
+})
+
+describe("parseTurn", () => {
+  it("parses a valid turn", () => {
+    expect(parseTurn('{"message":"hi","pace":"soon","lockIn":"NONE","followUp":false}')).toEqual({
+      message: "hi",
+      pace: "soon",
+      lockIn: "NONE",
+      followUp: false,
+    })
+  })
+
+  it("rejects unknown paces and lock-ins", () => {
+    expect(() => parseTurn('{"message":"","pace":"eventually","lockIn":"NONE","followUp":false}')).toThrow()
+    expect(() => parseTurn('{"message":"","pace":"soon","lockIn":"MAYBE","followUp":false}')).toThrow()
   })
 })

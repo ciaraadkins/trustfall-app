@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import Anthropic from "@anthropic-ai/sdk"
-import { GameError, generateDecision, generateText } from "@/lib/server/providers"
+import { DECISION_JSON_SCHEMA, parseDecision } from "@/lib/game/schemas"
+import { GameError, generateStructured, generateText } from "@/lib/server/providers"
+
+const generateDecision = (model: "claude" | "openai", req: Parameters<typeof generateText>[1]) =>
+  generateStructured(model, req, { name: "decision", schema: DECISION_JSON_SCHEMA }, parseDecision)
 
 const { create } = vi.hoisted(() => ({ create: vi.fn() }))
 

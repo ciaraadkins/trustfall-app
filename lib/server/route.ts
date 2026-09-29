@@ -1,11 +1,11 @@
 import "server-only"
 
 import { NextResponse } from "next/server"
-import { gameRequestSchema, type GameRequest } from "@/lib/game/schemas"
+import { turnRequestSchema, type TurnRequest } from "@/lib/game/schemas"
 import { GameError } from "./providers"
 
 /** Validate a game request body, run the handler, and map errors to JSON responses. */
-export async function handleGameRequest<T>(request: Request, handler: (req: GameRequest) => Promise<T>) {
+export async function handleGameRequest<T>(request: Request, handler: (req: TurnRequest) => Promise<T>) {
   let body: unknown
   try {
     body = await request.json()
@@ -13,7 +13,7 @@ export async function handleGameRequest<T>(request: Request, handler: (req: Game
     return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 })
   }
 
-  const parsed = gameRequestSchema.safeParse(body)
+  const parsed = turnRequestSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request.", issues: parsed.error.issues }, { status: 400 })
   }

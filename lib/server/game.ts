@@ -8,10 +8,19 @@ import {
   PROFILE_SYSTEM_PROMPT,
   buildProfilePrompt,
   buildSystemPrompt,
+  buildTurnContext,
 } from "@/lib/game/prompts"
-import type { GameRequest } from "@/lib/game/schemas"
-import type { Choice } from "@/types/game"
-import { generateDecision, generateText } from "./providers"
+import { messagesLeft } from "@/lib/game/rules"
+import {
+  DECISION_JSON_SCHEMA,
+  TURN_JSON_SCHEMA,
+  parseDecision,
+  parseTurn,
+  type TurnRequest,
+  type TurnResponse,
+} from "@/lib/game/schemas"
+import type { Choice, Message } from "@/types/game"
+import { generateStructured, generateText } from "./providers"
 
 const PROFILE_MAX_TOKENS = 600
 const PROFILE_TTL_MS = 60 * 60 * 1000
@@ -23,7 +32,7 @@ const PROFILE_CACHE_LIMIT = 500
  */
 const profiles = new Map<string, { profile: Promise<string>; createdAt: number }>()
 
-function getProfile(req: GameRequest): Promise<string> {
+function getProfile(req: TurnRequest): Promise<string> {
   const key = `${req.model}:${req.roundId}`
   const cached = profiles.get(key)
   if (cached && Date.now() - cached.createdAt < PROFILE_TTL_MS) return cached.profile
@@ -46,7 +55,7 @@ function getProfile(req: GameRequest): Promise<string> {
   return profile
 }
 
-async function systemPromptFor(req: GameRequest): Promise<string> {
+async function systemPromptFor(req: TurnRequest): Promise<string> {
   let profile: string
   try {
     profile = await getProfile(req)
@@ -57,20 +66,68 @@ async function systemPromptFor(req: GameRequest): Promise<string> {
   return buildSystemPrompt(profile, req.sessionStats)
 }
 
-export async function replyToPlayer(req: GameRequest): Promise<string> {
-  const reply = await generateText(req.model, {
-    system: await systemPromptFor(req),
-    turns: toChatTurns(req.messages),
-    maxTokens: MODELS[req.model].maxTokens.chat,
-  })
-  return stripMarkdown(reply)
+async function decide(req: TurnRequest, system: string, messages: Pick<Message, "sender" | "content">[]): Promise<Choice> {
+  const { decision } = await generateStructured(
+    req.model,
+    {
+      system,
+      turns: toChatTurns(messages, `${buildTurnContext({ ...req, mustLockIn: true })}\n\n${DECISION_INSTRUCTION}`),
+      maxTokens: MODELS[req.model].maxTokens.decision,
+    },
+    { name: "decision", schema: DECISION_JSON_SCHEMA },
+    parseDecision,
+  )
+  return decision
 }
 
-export async function decideForAI(req: GameRequest): Promise<Choice> {
-  const { decision } = await generateDecision(req.model, {
-    system: await systemPromptFor(req),
-    turns: toChatTurns(req.messages, DECISION_INSTRUCTION),
-    maxTokens: MODELS[req.model].maxTokens.decision,
-  })
-  return decision
+/**
+ * One AI turn: the model chooses whether to speak, how soon, and whether to
+ * lock in. The budget and lock-in rules are enforced here, whatever the model says.
+ */
+export async function takeAiTurn(req: TurnRequest): Promise<TurnResponse> {
+  const system = await systemPromptFor(req)
+  const aiLeft = messagesLeft(req.messages, "AI")
+
+  // Out of messages: the only thing left to do is lock in.
+  if (aiLeft === 0) {
+    if (req.aiLockIn) return { message: null, pace: "immediate", lockIn: null, followUp: false }
+    return { message: null, pace: "immediate", lockIn: await decide(req, system, req.messages), followUp: false }
+  }
+
+  let output
+  try {
+    output = await generateStructured(
+      req.model,
+      {
+        system,
+        turns: toChatTurns(req.messages, buildTurnContext(req)),
+        maxTokens: MODELS[req.model].maxTokens.turn,
+      },
+      { name: "turn", schema: TURN_JSON_SCHEMA },
+      parseTurn,
+    )
+  } catch (error) {
+    // A required lock-in still has to happen, even if the chat turn failed.
+    if (req.mustLockIn && !req.aiLockIn) {
+      return { message: null, pace: "immediate", lockIn: await decide(req, system, req.messages), followUp: false }
+    }
+    throw error
+  }
+
+  const message = stripMarkdown(output.message).slice(0, 2000) || null
+  let lockIn: Choice | null = req.aiLockIn || output.lockIn === "NONE" ? null : output.lockIn
+
+  // The AI's last message, or a turn the human is waiting on, must come with a lock-in.
+  const mustLock = !req.aiLockIn && (req.mustLockIn || (message !== null && aiLeft === 1))
+  if (mustLock && !lockIn) {
+    const withMessage = message ? [...req.messages, { sender: "AI" as const, content: message }] : req.messages
+    lockIn = await decide(req, system, withMessage)
+  }
+
+  return {
+    message,
+    pace: output.pace,
+    lockIn,
+    followUp: output.followUp && message !== null && aiLeft > 1,
+  }
 }

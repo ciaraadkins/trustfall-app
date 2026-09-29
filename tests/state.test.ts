@@ -1,97 +1,117 @@
 import { describe, expect, it } from "vitest"
-import { gameReducer, initialGameState, type GameAction, type GameState } from "@/lib/game/state"
+import { gameReducer, humanFinished, initialGameState, type GameAction, type GameState } from "@/lib/game/state"
+import type { Message } from "@/types/game"
 
 const start = (state: GameState = initialGameState, roundId = "r1"): GameState =>
-  gameReducer(state, { type: "START_ROUND", model: "claude", roundId, decisionThreshold: 3, now: 0 })
+  gameReducer(state, { type: "START_ROUND", model: "claude", roundId, now: 0 })
 
 const run = (state: GameState, ...actions: GameAction[]) => actions.reduce(gameReducer, state)
+const you = (content = "hi"): Message => ({ sender: "YOU", content, timestamp: 1 })
+const ai = (content = "hey"): Message => ({ sender: "AI", content, timestamp: 1 })
+const humanMsg = (roundId = "r1"): GameAction => ({ type: "HUMAN_MESSAGE", roundId, message: you() })
+const aiTurn = (message: Message | null, lockIn: "SHARE" | "KEEP" | null = null): GameAction => ({
+  type: "AI_TURN",
+  roundId: "r1",
+  message,
+  lockIn,
+})
 
 describe("gameReducer", () => {
   it("starts a round with the welcome message", () => {
     const state = start()
     expect(state.phase).toBe("chatting")
-    expect(state.messages).toHaveLength(1)
-    expect(state.messages[0].sender).toBe("SYSTEM")
+    expect(state.messages.map((m) => m.sender)).toEqual(["SYSTEM"])
   })
 
-  it("scores the AI decision it actually has, even if it arrived after the human decided", () => {
-    // Regression: the old code scored a stale `aiDecision` (null) from a closure.
+  it("lets either side send several messages in a row", () => {
+    const state = run(start(), humanMsg(), humanMsg(), aiTurn(ai()), aiTurn(ai()), aiTurn(ai()))
+    expect(state.messages.map((m) => m.sender)).toEqual(["SYSTEM", "YOU", "YOU", "AI", "AI", "AI"])
+  })
+
+  it("caps each side at 5 messages", () => {
+    const state = run(start(), ...Array(7).fill(humanMsg()), ...Array(7).fill(aiTurn(ai())))
+    expect(state.messages.filter((m) => m.sender === "YOU")).toHaveLength(5)
+    expect(state.messages.filter((m) => m.sender === "AI")).toHaveLength(5)
+  })
+
+  it("keeps chatting after one side locks in, and closes when both have", () => {
+    let state = run(start(), { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "SHARE" }, humanMsg())
+    expect(state.phase).toBe("chatting")
+    expect(state.messages.filter((m) => m.sender === "YOU")).toHaveLength(1)
+
+    state = gameReducer(state, aiTurn(ai("deal"), "KEEP"))
+    expect(state.phase).toBe("locked")
+    expect(state.messages.at(-1)?.content).toBe("deal")
+
+    // Nothing more can be sent once the chat closes.
+    state = run(state, humanMsg(), aiTurn(ai()))
+    expect(state.messages.at(-1)?.content).toBe("deal")
+  })
+
+  it("makes lock-ins final", () => {
     const state = run(
       start(),
-      { type: "HUMAN_DECIDED", roundId: "r1", decision: "KEEP" },
-      { type: "AI_DECIDED", roundId: "r1", decision: "SHARE" },
+      { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "SHARE" },
+      { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "KEEP" },
+      aiTurn(null, "KEEP"),
+      aiTurn(null, "SHARE"),
+    )
+    expect(state.humanLockIn).toBe("SHARE")
+    expect(state.aiLockIn).toBe("KEEP")
+  })
+
+  it("scores the reveal from both lock-ins", () => {
+    const state = run(
+      start(),
+      aiTurn(null, "SHARE"),
+      { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "KEEP" },
       { type: "REVEAL", roundId: "r1", date: "d" },
     )
     expect(state.phase).toBe("result")
     expect(state.lastResult).toMatchObject({ yourDecision: "KEEP", aiDecision: "SHARE", yourPoints: 5, aiPoints: 0 })
-    expect(state.history).toHaveLength(1)
   })
 
-  it("doesn't reveal until the AI has decided", () => {
-    const state = run(start(), { type: "HUMAN_DECIDED", roundId: "r1", decision: "SHARE" }, { type: "REVEAL", roundId: "r1", date: "d" })
-    expect(state.phase).toBe("resolving")
+  it("doesn't reveal until both have locked in", () => {
+    const state = run(start(), { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "SHARE" }, { type: "REVEAL", roundId: "r1", date: "d" })
+    expect(state.phase).toBe("chatting")
     expect(state.lastResult).toBeNull()
   })
 
-  it("keeps the first AI decision", () => {
-    const state = run(
-      start(),
-      { type: "AI_DECIDED", roundId: "r1", decision: "KEEP" },
-      { type: "AI_DECIDED", roundId: "r1", decision: "SHARE" },
-    )
-    expect(state.aiDecision).toBe("KEEP")
-  })
-
-  it("returns to chatting with an error when the AI decision fails, never inventing a move", () => {
-    const state = run(
-      start(),
-      { type: "HUMAN_DECIDED", roundId: "r1", decision: "SHARE" },
-      { type: "AI_DECISION_FAILED", roundId: "r1", error: "The ANTHROPIC_API_KEY was rejected." },
-    )
-    expect(state.phase).toBe("chatting")
-    expect(state.yourDecision).toBeNull()
-    expect(state.aiDecision).toBeNull()
-    expect(state.error).toContain("rejected")
-  })
-
-  it("ignores responses from a replaced round", () => {
-    const state = run(
-      start(start(), "r2"),
-      { type: "AI_REPLY", roundId: "r1", message: { sender: "AI", content: "stale", timestamp: 1 } },
-      { type: "AI_DECIDED", roundId: "r1", decision: "KEEP" },
-    )
+  it("stops your messages after I'M DONE TALKING (only once you've locked in)", () => {
+    let state = gameReducer(start(), { type: "HUMAN_DONE", roundId: "r1" })
+    expect(state.humanDone).toBe(false)
+    state = run(state, { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "KEEP" }, { type: "HUMAN_DONE", roundId: "r1" }, humanMsg())
+    expect(state.humanDone).toBe(true)
     expect(state.messages).toHaveLength(1)
-    expect(state.aiDecision).toBeNull()
+  })
+
+  it("ignores actions from a replaced round", () => {
+    const state = run(start(start(), "r2"), aiTurn(ai("stale"), "KEEP"))
+    expect(state.messages).toHaveLength(1)
+    expect(state.aiLockIn).toBeNull()
   })
 
   it("keeps session history across rounds", () => {
     const played = run(
       start(),
-      { type: "AI_DECIDED", roundId: "r1", decision: "SHARE" },
-      { type: "HUMAN_DECIDED", roundId: "r1", decision: "SHARE" },
+      aiTurn(null, "SHARE"),
+      { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "SHARE" },
       { type: "REVEAL", roundId: "r1", date: "d" },
     )
     const next = start(played, "r2")
     expect(next.history).toHaveLength(1)
-    expect(next.phase).toBe("chatting")
+    expect(next.aiLockIn).toBeNull()
     expect(next.lastResult).toBeNull()
   })
+})
 
-  it("counts user messages and toggles aiThinking", () => {
-    let state = run(start(), { type: "USER_MESSAGE", roundId: "r1", message: { sender: "YOU", content: "hi", timestamp: 1 } })
-    expect(state.userMessageCount).toBe(1)
-    expect(state.aiThinking).toBe(true)
-    state = gameReducer(state, { type: "AI_REPLY_FAILED", roundId: "r1", error: "Couldn't reach Claude." })
-    expect(state.aiThinking).toBe(false)
-    expect(state.error).toBe("Couldn't reach Claude.")
-  })
-
-  it("blocks messages after the human decides", () => {
-    const state = run(
-      start(),
-      { type: "HUMAN_DECIDED", roundId: "r1", decision: "KEEP" },
-      { type: "USER_MESSAGE", roundId: "r1", message: { sender: "YOU", content: "wait", timestamp: 1 } },
-    )
-    expect(state.userMessageCount).toBe(0)
+describe("humanFinished", () => {
+  it("is true once you've locked in and are out of messages or done talking", () => {
+    const locked = run(start(), { type: "HUMAN_LOCK_IN", roundId: "r1", choice: "SHARE" })
+    expect(humanFinished(locked)).toBe(false)
+    expect(humanFinished(gameReducer(locked, { type: "HUMAN_DONE", roundId: "r1" }))).toBe(true)
+    expect(humanFinished(run(locked, ...Array(5).fill(humanMsg())))).toBe(true)
+    // Out of messages but not locked in: still has something to do.
+    expect(humanFinished(run(start(), ...Array(5).fill(humanMsg())))).toBe(false)
   })
 })

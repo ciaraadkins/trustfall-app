@@ -1,41 +1,42 @@
 import { DEFAULT_MODEL } from "@/lib/models"
 import type { AIModel, Choice, Message, RoundResult } from "@/types/game"
 import { welcomeMessage } from "./prompts"
+import { messagesLeft } from "./rules"
 import { scoreRound } from "./scoring"
 
 /**
- * idle      - no round yet (before mount)
- * chatting  - conversation open, human hasn't decided
- * resolving - human decided; waiting on the AI's decision / reveal
- * result    - round scored
+ * idle     - no round yet (before mount)
+ * chatting - open chat; either side may message or lock in
+ * locked   - both sides locked in; waiting for the player to view results
+ * result   - round scored
  */
-type Phase = "idle" | "chatting" | "resolving" | "result"
+type Phase = "idle" | "chatting" | "locked" | "result"
 
 export type GameState = {
   model: AIModel
   roundId: string
   phase: Phase
   messages: Message[]
-  userMessageCount: number
-  /** User messages before the AI locks in its decision. */
-  decisionThreshold: number
-  aiThinking: boolean
-  /** Hidden from the UI until the reveal. */
-  aiDecision: Choice | null
-  yourDecision: Choice | null
+  /** The AI's typing indicator is showing. */
+  aiTyping: boolean
+  /** Secret until the reveal; the UI only shows whether it's set. */
+  aiLockIn: Choice | null
+  humanLockIn: Choice | null
+  /** The human clicked I'M DONE TALKING. */
+  humanDone: boolean
   lastResult: RoundResult | null
   history: RoundResult[]
   error: string | null
 }
 
 export type GameAction =
-  | { type: "START_ROUND"; model: AIModel; roundId: string; decisionThreshold: number; now: number }
-  | { type: "USER_MESSAGE"; roundId: string; message: Message }
-  | { type: "AI_REPLY"; roundId: string; message: Message }
-  | { type: "AI_REPLY_FAILED"; roundId: string; error: string }
-  | { type: "AI_DECIDED"; roundId: string; decision: Choice }
-  | { type: "HUMAN_DECIDED"; roundId: string; decision: Choice }
-  | { type: "AI_DECISION_FAILED"; roundId: string; error: string }
+  | { type: "START_ROUND"; model: AIModel; roundId: string; now: number }
+  | { type: "HUMAN_MESSAGE"; roundId: string; message: Message }
+  | { type: "AI_TYPING"; roundId: string; typing: boolean }
+  | { type: "AI_TURN"; roundId: string; message: Message | null; lockIn: Choice | null }
+  | { type: "HUMAN_LOCK_IN"; roundId: string; choice: Choice }
+  | { type: "HUMAN_DONE"; roundId: string }
+  | { type: "LOCK_IN_FAILED"; roundId: string; error: string }
   | { type: "REVEAL"; roundId: string; date: string }
   | { type: "DISMISS_ERROR" }
 
@@ -44,14 +45,24 @@ export const initialGameState: GameState = {
   roundId: "",
   phase: "idle",
   messages: [],
-  userMessageCount: 0,
-  decisionThreshold: 0,
-  aiThinking: false,
-  aiDecision: null,
-  yourDecision: null,
+  aiTyping: false,
+  aiLockIn: null,
+  humanLockIn: null,
+  humanDone: false,
   lastResult: null,
   history: [],
   error: null,
+}
+
+/** The human has nothing left to do but wait for the AI's lock-in. */
+export function humanFinished(state: GameState): boolean {
+  return state.humanLockIn !== null && (state.humanDone || messagesLeft(state.messages, "YOU") === 0)
+}
+
+function withLockPhase(state: GameState): GameState {
+  return state.phase === "chatting" && state.aiLockIn && state.humanLockIn
+    ? { ...state, phase: "locked", aiTyping: false }
+    : state
 }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
@@ -62,52 +73,53 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       model: action.model,
       roundId: action.roundId,
       phase: "chatting",
-      decisionThreshold: action.decisionThreshold,
       messages: [{ sender: "SYSTEM", content: welcomeMessage(), timestamp: action.now }],
     }
   }
   if (action.type === "DISMISS_ERROR") return { ...state, error: null }
 
-  // Ignore responses that belong to a round that has since been replaced.
+  // Ignore anything from a round that has since been replaced.
   if (action.roundId !== state.roundId) return state
 
   switch (action.type) {
-    case "USER_MESSAGE":
+    case "HUMAN_MESSAGE":
+      if (state.phase !== "chatting" || state.humanDone || messagesLeft(state.messages, "YOU") === 0) return state
+      return { ...state, messages: [...state.messages, action.message], error: null }
+
+    case "AI_TYPING":
       if (state.phase !== "chatting") return state
-      return {
+      return { ...state, aiTyping: action.typing }
+
+    case "AI_TURN": {
+      if (state.phase !== "chatting") return state
+      const canSend = action.message !== null && messagesLeft(state.messages, "AI") > 0
+      return withLockPhase({
         ...state,
-        messages: [...state.messages, action.message],
-        userMessageCount: state.userMessageCount + 1,
-        aiThinking: true,
-        error: null,
-      }
+        aiTyping: false,
+        messages: canSend ? [...state.messages, action.message!] : state.messages,
+        aiLockIn: state.aiLockIn ?? action.lockIn,
+      })
+    }
 
-    case "AI_REPLY":
-      return { ...state, messages: [...state.messages, action.message], aiThinking: false }
+    case "HUMAN_LOCK_IN":
+      if (state.phase !== "chatting" || state.humanLockIn) return state
+      return withLockPhase({ ...state, humanLockIn: action.choice, error: null })
 
-    case "AI_REPLY_FAILED":
-      return { ...state, aiThinking: false, error: action.error }
+    case "HUMAN_DONE":
+      if (state.phase !== "chatting" || !state.humanLockIn) return state
+      return { ...state, humanDone: true }
 
-    case "AI_DECIDED":
-      if (state.aiDecision) return state
-      return { ...state, aiDecision: action.decision }
-
-    case "HUMAN_DECIDED":
+    case "LOCK_IN_FAILED":
       if (state.phase !== "chatting") return state
-      return { ...state, phase: "resolving", yourDecision: action.decision, error: null }
-
-    case "AI_DECISION_FAILED":
-      // Let the human try again rather than inventing a move for the AI.
-      if (state.phase !== "resolving") return state
-      return { ...state, phase: "chatting", yourDecision: null, error: action.error }
+      return { ...state, aiTyping: false, error: action.error }
 
     case "REVEAL": {
-      if (state.phase !== "resolving" || !state.yourDecision || !state.aiDecision) return state
+      if (state.phase !== "locked" || !state.humanLockIn || !state.aiLockIn) return state
       const result: RoundResult = {
         model: state.model,
-        yourDecision: state.yourDecision,
-        aiDecision: state.aiDecision,
-        ...scoreRound(state.yourDecision, state.aiDecision),
+        yourDecision: state.humanLockIn,
+        aiDecision: state.aiLockIn,
+        ...scoreRound(state.humanLockIn, state.aiLockIn),
         date: action.date,
       }
       return { ...state, phase: "result", lastResult: result, history: [...state.history, result] }
