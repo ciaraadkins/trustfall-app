@@ -16,8 +16,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env*
+# env files (.env.example is committed)
+.env
+.env*.local
 
 # vercel
 .vercel
@@ -25,3 +26,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local planning docs
+UPDATE_PLAN.md
+
+# OS / editor leftovers
+.DS_Store
+*.bak

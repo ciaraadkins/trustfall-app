@@ -1,448 +1,208 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
-import { useAuth } from "@/contexts/auth-context"
-import { getAIServiceManager } from "@/services/ai-service-manager"
-import type { Message, Decision, GameResult, GameHistory } from "@/types/game"
-import type { AIModel, GameStats } from "@/services/base-ai-service" // Import AIModel and GameStats from base-ai-service
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react"
+import { DEFAULT_MODEL, MODELS, isAIModel } from "@/lib/models"
+import { requestDecision, requestReply } from "@/lib/game/api-client"
+import { computeSessionStats } from "@/lib/game/scoring"
+import { gameReducer, initialGameState, type GameState } from "@/lib/game/state"
 import { randomInt, weightedRandom } from "@/utils/random"
-import { placeholderScores, placeholderGameStats, placeholderGameHistory, getGameStats as getPlaceholderGameStats } from "@/data/placeholder-scores"
+import type { AIModel, Choice, Message, SessionStats } from "@/types/game"
+
+const MODEL_STORAGE_KEY = "selectedModel"
+const REVEAL_DELAY_MS = 1500
 
 interface GameContextType {
-  messages: Message[]
-  aiThinking: boolean
-  aiHasDecided: boolean
-  yourDecision: Decision
-  aiDecision: Decision
-  yourScore: number
-  aiScore: number
-  globalHumanScore: number
-  globalAiScore: number
-  conversationStarted: boolean
-  showDecision: boolean
+  state: GameState
   aiName: string
+  sessionStats: SessionStats
   sendMessage: (content: string) => Promise<void>
-  makeDecision: (decision: Decision) => Promise<void>
-  resetGame: () => void
+  makeDecision: (decision: Choice) => Promise<void>
+  /** Start a fresh round, optionally against a different model. */
+  startRound: (model?: AIModel) => void
+  /** Switch opponent; resets the round only if the model changes. */
+  selectModel: (model: AIModel) => void
+  dismissError: () => void
 }
 
-const GameContext = createContext<GameContextType>({
-  messages: [],
-  aiThinking: false,
-  aiHasDecided: false,
-  yourDecision: null,
-  aiDecision: null,
-  yourScore: 0,
-  aiScore: 0,
-  globalHumanScore: placeholderScores.humanScore,
-  globalAiScore: placeholderScores.aiScore,
-  conversationStarted: false,
-  showDecision: false,
-  aiName: "CLAUDE",
-  sendMessage: async () => {},
-  makeDecision: async () => {},
-  resetGame: () => {},
-})
+const GameContext = createContext<GameContextType | null>(null)
 
-export const useGame = () => useContext(GameContext)
+export const useGame = () => {
+  const context = useContext(GameContext)
+  if (!context) throw new Error("useGame must be used inside GameProvider")
+  return context
+}
+
+function newRoundId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function realismDelay(): number {
+  const responseType = weightedRandom([
+    { value: "immediate", weight: 60 },
+    { value: "short-delay", weight: 30 },
+    { value: "long-delay", weight: 10 },
+  ])
+  if (responseType === "immediate") return 500
+  if (responseType === "short-delay") return randomInt(2000, 5000)
+  return randomInt(5000, 10000)
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth()
-  const [messages, setMessages] = useState<Message[]>([])
-  const [aiThinking, setAiThinking] = useState(false)
-  const [aiHasDecided, setAiHasDecided] = useState(false)
-  const [yourDecision, setYourDecision] = useState<Decision>(null)
-  const [aiDecision, setAiDecision] = useState<Decision>(null)
-  const [yourScore, setYourScore] = useState(0)
-  const [aiScore, setAiScore] = useState(0)
-  const [globalHumanScore, setGlobalHumanScore] = useState(placeholderScores.humanScore)
-  const [globalAiScore, setGlobalAiScore] = useState(placeholderScores.aiScore)
-  const [messageThreshold, setMessageThreshold] = useState(0)
-  const [messageCount, setMessageCount] = useState(0)
-  const [conversationStarted, setConversationStarted] = useState(false)
-  const [showDecision, setShowDecision] = useState(false)
-  const [gameHistory, setGameHistory] = useState<GameHistory>(placeholderGameHistory)
-  const [aiName, setAiName] = useState<string>("CLAUDE")
+  const [state, dispatch] = useReducer(gameReducer, initialGameState)
 
-  // Initialize the game when the component mounts
-  useEffect(() => {
-    initializeGame()
-    loadGameHistory()
-  }, [user])
-  
-  // Generate strategic profile when the game initializes
-  useEffect(() => {
-    if (user) {
-      generateStrategicProfile()
+  // Async callbacks read the latest state through this ref instead of a stale closure.
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  // One in-flight AI decision per round, shared by the threshold trigger and makeDecision.
+  const pendingDecision = useRef<{ roundId: string; promise: Promise<Choice | null> } | null>(null)
+
+  const sessionStats = useMemo(() => computeSessionStats(state.history), [state.history])
+  const sessionStatsRef = useRef(sessionStats)
+  sessionStatsRef.current = sessionStats
+
+  const startRound = useCallback((model?: AIModel) => {
+    const nextModel = model ?? stateRef.current.model
+    try {
+      localStorage.setItem(MODEL_STORAGE_KEY, nextModel)
+    } catch {
+      // Storage may be unavailable (private mode); the choice just won't persist.
     }
-  }, [user])
-  
-  // Use a model change listener to update AI name
-  useEffect(() => {
-    const aiManager = getAIServiceManager()
-    
-    // Set the AI name based on the current model
-    const updateAiName = (model: AIModel) => {
-      let newName = "AI";
-      switch (model) {
-        case "claude":
-          newName = "CLAUDE";
-          break
-        case "openai":
-          newName = "CHATGPT";
-          break
-        case "gemini":
-          newName = "GEMINI";
-          break
-        default:
-          console.error(`Unknown AI model: ${model}`); // Add error handling for unknown models
-      }
-      
-      // Update the AI name
-      setAiName(newName);
-      
-      // Reset messages when the model changes (except on first load)
-      if (messages.length > 0) {
-        // Small timeout to ensure aiName is updated before initializing
-        setTimeout(() => {
-          resetGame();
-        }, 100);
-      }
-    }
-    
-    // Set initial AI name based on the saved model or current selection
-    const currentModel = aiManager.getSelectedModel()
-    console.log('Current model in game context:', currentModel)
-    updateAiName(currentModel)
-    
-    // Register a listener for model changes
-    const removeListener = aiManager.onModelChange(updateAiName)
-    
-    // Clean up the listener when the component unmounts
-    return () => removeListener()
+    pendingDecision.current = null
+    dispatch({
+      type: "START_ROUND",
+      model: nextModel,
+      roundId: newRoundId(),
+      decisionThreshold: randomInt(3, 7),
+      now: Date.now(),
+    })
   }, [])
 
-  const loadGameHistory = async () => {
-    if (!user) return
-
-    try {
-      // In a real app, this would come from a database
-      // For now, we'll use placeholder data
-      setGameHistory(placeholderGameHistory)
-    } catch (error) {
-      console.error("Error loading game history:", error)
-    }
-  }
-
-  const generateStrategicProfile = async () => {
-    try {
-      // Get the AI service manager and generate a strategic profile
-      const aiManager = getAIServiceManager()
-      await aiManager.generateStrategicProfile()
-      console.log("Strategic profile generated successfully")
-    } catch (error) {
-      console.error("Error generating strategic profile:", error)
-    }
-  }
-
-  const initializeGame = () => {
-    // Set a random message threshold for AI decision (3-7 messages)
-    const threshold = randomInt(3, 7)
-    setMessageThreshold(threshold)
-    
-    // Check the current model being used
-    const aiManager = getAIServiceManager()
-    const currentModelId = aiManager.getSelectedModel()
-    console.log(`Game initialized with model: '${currentModelId}', aiName: '${aiName}'`)
-
-    // 50% chance for AI to initiate conversation
-    const aiInitiates = Math.random() < 0.5
-    
-    // Get the current AI name
-    const currentAiName = aiName
-    
-    // Prepare personalized greeting based on AI name
-    let greeting = "Hello!"
-    if (currentAiName === "CLAUDE") {
-      greeting = "Hello! I'm Claude."
-    } else if (currentAiName === "CHATGPT") {
-      greeting = "Hello! I'm ChatGPT."
-    } else if (currentAiName === "GEMINI") {
-      greeting = "Hello! I'm Gemini."
-    }
-
-    const initialMessages: Message[] = [
-      {
-        sender: "SYSTEM",
-        content: "Welcome to TRUSTFALL. In this game you'll decide whether to SHARE or KEEP resources. If you both SHARE, you each get 3 points. If one SHARES and one KEEPS, the keeper gets 5 points and the sharer gets 0. If you both KEEP, you each get 1 point.",
-        timestamp: Date.now(),
-      },
-    ]
-
-    if (aiInitiates) {
-      // // Create AI-specific greeting
-      // let greeting = "Hello!"
-      // if (currentAiName === "CLAUDE") {
-      //   greeting = "Hello! I'm Claude."
-      // } else if (currentAiName === "CHATGPT") {
-      //   greeting = "Hello! I'm ChatGPT."
-      // } else if (currentAiName === "GEMINI") {
-      //   greeting = "Hello! I'm Gemini."
-      // }
-
-      // initialMessages.push({
-      //   sender: currentAiName,
-      //   content: `${greeting} In this game, we'll both decide whether to SHARE or KEEP resources. If we both SHARE, we each get 3 points. If one SHARES and one KEEPS, the keeper gets 5 points and the sharer gets 0. If we both KEEP, we each get 1 point. What's your strategy?`,
-      //   timestamp: Date.now() + 100,
-      // })
-      setConversationStarted(true)
-    }
-
-    setMessages(initialMessages)
-    setAiThinking(false)
-    setAiHasDecided(false)
-    setYourDecision(null)
-    setAiDecision(null)
-    setShowDecision(false)
-    setMessageCount(0)
-  }
-
-  const getGameStats = (): GameStats => {
-    // Use the actual game history if available, or fall back to placeholders
-    if (gameHistory.results.length > 0) {
-      return {
-        username: user?.email?.split("@")[0] || "anonymous",
-        gamesPlayed: gameHistory.results.length,
-        bothShare: gameHistory.results.filter((r) => r.yourDecision === "SHARE" && r.aiDecision === "SHARE").length,
-        humanShareAiKeep: gameHistory.results.filter((r) => r.yourDecision === "SHARE" && r.aiDecision === "KEEP").length,
-        humanKeepAiShare: gameHistory.results.filter((r) => r.yourDecision === "KEEP" && r.aiDecision === "SHARE").length,
-        bothKeep: gameHistory.results.filter((r) => r.yourDecision === "KEEP" && r.aiDecision === "KEEP").length,
-      };
-    }
-
-    // Use placeholder data with the correct username
-    const placeholderStats = getPlaceholderGameStats(user?.email?.split("@")[0]);
-    return {
-      username: placeholderStats.username,
-      gamesPlayed: placeholderStats.gamesPlayed,
-      bothShare: placeholderStats.bothShare,
-      humanShareAiKeep: placeholderStats.humanShareAiKeep,
-      humanKeepAiShare: placeholderStats.humanKeepAiShare,
-      bothKeep: placeholderStats.bothKeep,
-    };
-  }
-
-  const sendMessage = async (content: string) => {
-    if (!content.trim()) return
-
-    const newMessage: Message = {
-      sender: "YOU",
-      content,
-      timestamp: Date.now(),
-    }
-
-    setMessages((prev) => [...prev, newMessage])
-
-    // Increment message count
-    const newMessageCount = messageCount + 1
-    setMessageCount(newMessageCount)
-
-    // Set conversation as started if this is the first user message
-    if (!conversationStarted) {
-      setConversationStarted(true)
-    }
-
-    // Randomize response timing
-    const responseType = weightedRandom([
-      { value: "immediate", weight: 60 },
-      { value: "short-delay", weight: 30 },
-      { value: "long-delay", weight: 10 },
-    ])
-
-    const delay =
-      responseType === "immediate"
-        ? 500
-        : responseType === "short-delay"
-          ? randomInt(2000, 5000)
-          : randomInt(5000, 10000)
-
-    // Show AI is typing
-    setAiThinking(true)
-
-    try {
-      // Get AI service manager
-      const aiManager = getAIServiceManager()
-      
-      // Ensure we have a strategic profile
-      await aiManager.getStrategicProfile()
-      
-      // Get AI's response
-      const aiResponseText = await aiManager.sendMessage(
-        [...messages, newMessage],
-        globalHumanScore,
-        globalAiScore,
-        getGameStats(),
-      )
-
-      // Add a delay for realism
-      await new Promise((resolve) => setTimeout(resolve, delay))
-
-      setAiThinking(false)
-
-      const aiResponse: Message = {
-        sender: aiName,
-        content: aiResponseText,
-        timestamp: Date.now(),
-      }
-
-      setMessages((prev) => [...prev, aiResponse])
-
-      // Check if we've reached the message threshold for AI decision
-      checkAndMakeAIDecisionIfNeeded(newMessageCount)
-    } catch (error) {
-      console.error(`Error getting ${aiName}'s response:`, error)
-      setAiThinking(false)
-
-      // Fallback message if there's an error
-      const fallbackResponse: Message = {
-        sender: aiName,
-        content: "I'm thinking about my approach to this game. How would you like to proceed?",
-        timestamp: Date.now(),
-      }
-
-      setMessages((prev) => [...prev, fallbackResponse])
-
-      // Still check for AI decision
-      checkAndMakeAIDecisionIfNeeded(newMessageCount)
-    }
-  }
-
-  const checkAndMakeAIDecisionIfNeeded = async (currentMessageCount: number) => {
-    if (currentMessageCount >= messageThreshold && !aiHasDecided && !aiDecision) {
-      try {
-        // Get AI service manager
-        const aiManager = getAIServiceManager()
-        
-        // Ensure we have a strategic profile
-        await aiManager.getStrategicProfile()
-        
-        // Get AI's decision
-        const decision = await aiManager.getAiDecision(messages, globalHumanScore, globalAiScore, getGameStats())
-
-        // Store decision internally but don't reveal
-        setAiDecision(decision)
-        setAiHasDecided(true)
-      } catch (error) {
-        console.error("Error getting AI decision:", error)
-        // Default to a random decision if there's an error
-        const randomDecision: Decision = Math.random() > 0.5 ? "SHARE" : "KEEP"
-        setAiDecision(randomDecision)
-        setAiHasDecided(true)
-      }
-    }
-  }
-
-  const makeDecision = async (decision: Decision) => {
-    setYourDecision(decision)
-
-    // If AI hasn't decided yet, force a decision
-    if (!aiHasDecided) {
-      try {
-        // Get AI service manager
-        const aiManager = getAIServiceManager()
-        
-        // Ensure we have a strategic profile
-        await aiManager.getStrategicProfile()
-        
-        // Get AI's decision
-        const aiChoice = await aiManager.getAiDecision(messages, globalHumanScore, globalAiScore, getGameStats())
-
-        setAiDecision(aiChoice)
-        setAiHasDecided(true)
-      } catch (error) {
-        console.error("Error getting AI decision:", error)
-        // Default to a random decision if there's an error
-        const randomDecision: Decision = Math.random() > 0.5 ? "SHARE" : "KEEP"
-        setAiDecision(randomDecision)
-        setAiHasDecided(true)
-      }
-    }
-
-    // Show decision screen after both have decided
-    setTimeout(() => {
-      setShowDecision(true)
-
-      // Calculate scores
-      let yourPoints = 0
-      let aiPoints = 0
-
-      if (decision === "SHARE" && aiDecision === "SHARE") {
-        yourPoints = 3
-        aiPoints = 3
-      } else if (decision === "SHARE" && aiDecision === "KEEP") {
-        yourPoints = 0
-        aiPoints = 5
-      } else if (decision === "KEEP" && aiDecision === "SHARE") {
-        yourPoints = 5
-        aiPoints = 0
-      } else if (decision === "KEEP" && aiDecision === "KEEP") {
-        yourPoints = 1
-        aiPoints = 1
-      }
-
-      setYourScore((prev) => prev + yourPoints)
-      setAiScore((prev) => prev + aiPoints)
-
-      // Update global scores
-      setGlobalHumanScore((prev) => prev + yourPoints)
-      setGlobalAiScore((prev) => prev + aiPoints)
-
-      // Update game history
-      const newResult: GameResult = {
-        yourDecision: decision,
-        aiDecision: aiDecision!,
-        yourPoints,
-        aiPoints,
-        date: new Date().toISOString(),
-      }
-
-      setGameHistory((prev) => ({
-        results: [newResult, ...prev.results],
-        totalHumanScore: prev.totalHumanScore + yourPoints,
-        totalAiScore: prev.totalAiScore + aiPoints,
-      }))
-
-      // In a real app, you would save this to a database
-    }, 1500)
-  }
-
-  const resetGame = () => {
-    initializeGame()
-  }
-
-  return (
-    <GameContext.Provider
-      value={{
-        messages,
-        aiThinking,
-        aiHasDecided,
-        yourDecision,
-        aiDecision,
-        yourScore,
-        aiScore,
-        globalHumanScore,
-        globalAiScore,
-        conversationStarted,
-        showDecision,
-        aiName,
-        sendMessage,
-        makeDecision,
-        resetGame,
-      }}
-    >
-      {children}
-    </GameContext.Provider>
+  const selectModel = useCallback(
+    (model: AIModel) => {
+      const current = stateRef.current
+      if (current.phase === "idle" || model !== current.model) startRound(model)
+    },
+    [startRound],
   )
-}
 
+  // Restore the saved opponent and start the first round after mount.
+  useEffect(() => {
+    let saved: string | null = null
+    try {
+      saved = localStorage.getItem(MODEL_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    if (stateRef.current.phase === "idle") startRound(isAIModel(saved) ? saved : DEFAULT_MODEL)
+  }, [startRound])
+
+  /**
+   * Get the AI's decision for a round, reusing a request that's already in
+   * flight. Resolves to null on failure; `reportErrors` surfaces it to the player.
+   */
+  const ensureAiDecision = useCallback(
+    (roundId: string, messages: Message[], reportErrors: boolean): Promise<Choice | null> => {
+      const current = stateRef.current
+      if (current.roundId === roundId && current.aiDecision) return Promise.resolve(current.aiDecision)
+
+      let pending = pendingDecision.current
+      if (!pending || pending.roundId !== roundId) {
+        const promise = requestDecision({
+          model: current.model,
+          roundId,
+          messages,
+          sessionStats: sessionStatsRef.current,
+        }).then(
+          (decision) => {
+            dispatch({ type: "AI_DECIDED", roundId, decision })
+            return decision
+          },
+          (error: Error) => {
+            if (pendingDecision.current?.promise === promise) pendingDecision.current = null
+            return Promise.reject(error)
+          },
+        )
+        pending = { roundId, promise: promise as Promise<Choice | null> }
+        pendingDecision.current = pending
+      }
+
+      return pending.promise.catch((error: Error) => {
+        if (reportErrors) dispatch({ type: "AI_DECISION_FAILED", roundId, error: error.message })
+        return null
+      })
+    },
+    [],
+  )
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      const current = stateRef.current
+      const text = content.trim()
+      if (!text || current.phase !== "chatting" || current.aiThinking) return
+
+      const { roundId, model } = current
+      const userMessage: Message = { sender: "YOU", content: text, timestamp: Date.now() }
+      const messages = [...current.messages, userMessage]
+      dispatch({ type: "USER_MESSAGE", roundId, message: userMessage })
+
+      const startedAt = Date.now()
+      try {
+        const reply = await requestReply({ model, roundId, messages, sessionStats: sessionStatsRef.current })
+        await sleep(Math.max(0, realismDelay() - (Date.now() - startedAt)))
+
+        const aiMessage: Message = { sender: "AI", content: reply, timestamp: Date.now() }
+        dispatch({ type: "AI_REPLY", roundId, message: aiMessage })
+
+        const after = stateRef.current
+        if (after.roundId === roundId && current.userMessageCount + 1 >= current.decisionThreshold) {
+          // Lock in the AI's decision in the background; errors surface only if the human is waiting on it.
+          void ensureAiDecision(roundId, [...messages, aiMessage], false)
+        }
+      } catch (error) {
+        dispatch({ type: "AI_REPLY_FAILED", roundId, error: (error as Error).message })
+      }
+    },
+    [ensureAiDecision],
+  )
+
+  const makeDecision = useCallback(
+    async (decision: Choice) => {
+      const current = stateRef.current
+      if (current.phase !== "chatting") return
+
+      const { roundId } = current
+      dispatch({ type: "HUMAN_DECIDED", roundId, decision })
+
+      const aiChoice = await ensureAiDecision(roundId, current.messages, true)
+      if (!aiChoice) return
+
+      await sleep(REVEAL_DELAY_MS)
+      dispatch({ type: "REVEAL", roundId, date: new Date().toISOString() })
+    },
+    [ensureAiDecision],
+  )
+
+  const dismissError = useCallback(() => dispatch({ type: "DISMISS_ERROR" }), [])
+
+  const value = useMemo<GameContextType>(
+    () => ({
+      state,
+      aiName: MODELS[state.model].displayName,
+      sessionStats,
+      sendMessage,
+      makeDecision,
+      startRound,
+      selectModel,
+      dismissError,
+    }),
+    [state, sessionStats, sendMessage, makeDecision, startRound, selectModel, dismissError],
+  )
+
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>
+}

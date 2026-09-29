@@ -3,28 +3,23 @@
 import { useState } from "react"
 import Link from "next/link"
 import { Trophy, Filter, Search, PlayCircle, Users } from "lucide-react"
-import { placeholderScores } from "@/data/placeholder-scores"
+import Scoreboard from "@/components/scoreboard"
 
-type TimeFilter = "all" | "week" | "month"
-type AIFilter = "all" | "claude" | "chatgpt" | "gemini"
+type AIFilter = "all" | "claude" | "chatgpt"
 
 export default function LeaderboardPage() {
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all")
   const [aiFilter, setAiFilter] = useState<AIFilter>("all")
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Sample data - in a real app, this would come from a database
+  // Sample data until Stage 2 stores real players.
   const leaderboardData = [
     { rank: 1, username: "CooperativeAI", score: 1245, games: 78, aiModel: "claude", cooperationRate: 92 },
     { rank: 2, username: "GameTheory101", score: 1198, games: 65, aiModel: "chatgpt", cooperationRate: 85 },
-    { rank: 3, username: "TrustBuilder", score: 1156, games: 82, aiModel: "gemini", cooperationRate: 90 },
-    { rank: 4, username: "OptimalPlayer", score: 1087, games: 59, aiModel: "claude", cooperationRate: 78 },
-    { rank: 5, username: "AIWhisperer", score: 1042, games: 71, aiModel: "chatgpt", cooperationRate: 82 },
-    { rank: 6, username: "LogicalChoice", score: 978, games: 53, aiModel: "gemini", cooperationRate: 75 },
-    { rank: 7, username: "EquilibriumSeeker", score: 945, games: 62, aiModel: "claude", cooperationRate: 88 },
-    { rank: 8, username: "CoopDefector", score: 912, games: 48, aiModel: "chatgpt", cooperationRate: 65 },
-    { rank: 9, username: "NashOptimizer", score: 876, games: 57, aiModel: "gemini", cooperationRate: 72 },
-    { rank: 10, username: "TrustfallPro", score: 845, games: 44, aiModel: "claude", cooperationRate: 80 },
+    { rank: 3, username: "OptimalPlayer", score: 1087, games: 59, aiModel: "claude", cooperationRate: 78 },
+    { rank: 4, username: "AIWhisperer", score: 1042, games: 71, aiModel: "chatgpt", cooperationRate: 82 },
+    { rank: 5, username: "EquilibriumSeeker", score: 945, games: 62, aiModel: "claude", cooperationRate: 88 },
+    { rank: 6, username: "CoopDefector", score: 912, games: 48, aiModel: "chatgpt", cooperationRate: 65 },
+    { rank: 7, username: "TrustfallPro", score: 845, games: 44, aiModel: "claude", cooperationRate: 80 },
   ]
 
   // Filter the data based on user selections
@@ -59,25 +54,13 @@ export default function LeaderboardPage() {
             </Link>
           </div>
 
-          {/* Global Score moved to homepage per requirements */}
-          <div className="bg-[#1e1e1e] border border-[#33FF33]/30 rounded-lg p-4 mb-6">
-            <div className="flex justify-between items-center">
-              <div className="text-center flex-1">
-                <div className="text-xs mb-1">HUMANS</div>
-                <div className="text-xl text-[#33FF33] font-bold">{placeholderScores.humanScore.toLocaleString()}</div>
-              </div>
-              <div className="h-10 w-px bg-[#33FF33]/30"></div>
-              <div className="text-center flex-1">
-                <div className="text-xs mb-1">AI</div>
-                <div className="text-xl text-[#FF5555] font-bold">{placeholderScores.aiScore.toLocaleString()}</div>
-              </div>
-            </div>
-          </div>
+          <Scoreboard className="mb-6" />
 
           <div className="flex items-center justify-between gap-4 mb-8">
             <div className="flex items-center gap-2">
               <Trophy className="w-6 h-6 text-[#FFAA55]" />
               <h2 className="text-2xl font-mono font-bold">LEADERBOARD</h2>
+              <span className="text-xs font-mono text-[#FFAA55] border border-[#FFAA55]/50 rounded px-2 py-0.5">SAMPLE DATA</span>
             </div>
             
             <div className="flex items-center gap-2">
@@ -126,17 +109,6 @@ export default function LeaderboardPage() {
                     }`}
                   >
                     CHATGPT
-                  </button>
-
-                  <button
-                    onClick={() => setAiFilter("gemini")}
-                    className={`px-3 py-1 rounded text-sm font-mono ${
-                      aiFilter === "gemini"
-                        ? "bg-[#33FF33]/20 border border-[#33FF33]"
-                        : "bg-[#2a2a2a] border border-[#33FF33]/30 hover:border-[#33FF33]/60"
-                    }`}
-                  >
-                    GEMINI
                   </button>
                 </div>
               </div>

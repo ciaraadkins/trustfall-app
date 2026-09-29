@@ -3,9 +3,8 @@
 import Link from "next/link"
 import { useState } from "react"
 import { Terminal, Mail, Lock, LogIn, AlertTriangle, ChevronLeft, Monitor } from "lucide-react"
-import { useAuth } from "@/contexts/auth-context"
+import { AUTH_ENABLED, useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
-import FirebaseSetupGuide from "@/components/firebase-setup-guide"
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true)
@@ -16,20 +15,33 @@ export default function AuthPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    try {
-      if (isLogin) {
-        await signIn(email, password)
-      } else {
-        await signUp(email, password)
-      }
-    } catch (error) {
-      console.error("Authentication error:", error)
+    if (isLogin) {
+      await signIn(email, password)
+    } else {
+      await signUp(email, password)
     }
   }
   
   const handleGuestPlay = () => {
     router.push("/select")
+  }
+
+  if (!AUTH_ENABLED) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-[#121212] text-[#33FF33] p-6">
+        <div className="max-w-md text-center font-mono">
+          <h1 className="text-3xl font-bold mb-4">ACCOUNTS COMING SOON</h1>
+          <p className="text-[#ccc] mb-8">Login is turned off for now. You can play as a guest; scores last for this session.</p>
+          <button
+            onClick={handleGuestPlay}
+            className="inline-flex items-center justify-center px-8 py-3 bg-[#1a1a1a] border border-[#33FF33]/30 hover:border-[#33FF33] rounded-lg text-[#33FF33] transition-all duration-200"
+          >
+            <Monitor className="w-5 h-5 mr-2" />
+            PLAY AS GUEST
+          </button>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -77,10 +89,6 @@ export default function AuthPage() {
         )}
 
         <div className="bg-[#1a1a1a] border border-[#33FF33]/30 rounded-lg p-8">
-          <div className="mb-4">
-            <FirebaseSetupGuide />
-          </div>
-          
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#33FF33]/70">

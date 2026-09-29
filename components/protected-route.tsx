@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
+import { AUTH_ENABLED, useAuth } from "@/contexts/auth-context"
 
 export default function ProtectedRoute({
   children,
@@ -16,16 +16,16 @@ export default function ProtectedRoute({
   const { user, loading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const mustSignIn = AUTH_ENABLED && !allowGuest
 
   useEffect(() => {
-    // If not loading and user not logged in
-    if (!loading && !user) {
-      // If guest access is not allowed, redirect to auth
-      if (!allowGuest) {
-        router.push(`/auth?redirect=${pathname}`)
-      }
+    if (mustSignIn && !loading && !user) {
+      router.push(`/auth?redirect=${pathname}`)
     }
-  }, [user, loading, router, allowGuest, pathname])
+  }, [mustSignIn, user, loading, router, pathname])
+
+  // With auth disabled, every page is open.
+  if (!AUTH_ENABLED) return <>{children}</>
 
   if (loading) {
     return (
@@ -38,11 +38,7 @@ export default function ProtectedRoute({
     )
   }
 
-  // If user is not logged in and guest access is not allowed, don't render children
-  if (!user && !allowGuest) {
-    return null
-  }
+  if (!user && mustSignIn) return null
 
   return <>{children}</>
 }
-

@@ -15,7 +15,6 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   title: "TRUSTFALL - Humans vs. AI",
   description: "A modern console-inspired game of trust and strategy",
-    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -36,7 +35,3 @@ export default function RootLayout({
     </html>
   )
 }
-
-
-
-import './globals.css'

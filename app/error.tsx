@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 import Link from "next/link"
-import { Terminal, AlertTriangle, Database } from "lucide-react"
+import { Terminal, AlertTriangle } from "lucide-react"
 
 export default function ErrorPage({
   error,
@@ -33,24 +33,9 @@ export default function ErrorPage({
           </div>
 
           <p className="text-sm text-[#FF5555] font-mono mb-4">
-            {error?.message || "An unexpected error occurred. Please check your configuration."}
+            {error?.message || "An unexpected error occurred."}
           </p>
 
-          <div className="bg-[#1a1a1a] p-4 rounded mb-4">
-            <h3 className="text-sm font-mono text-[#FFAA55] mb-2 flex items-center gap-2">
-              <Database className="w-4 h-4" />
-              FIREBASE SETUP REQUIRED
-            </h3>
-            <p className="text-xs text-[#ccc] mb-3">
-              Make sure you have set up the Claude API key in your Firebase Firestore database:
-            </p>
-            <ol className="text-xs text-[#ccc] list-decimal pl-4 space-y-1">
-              <li>Create a collection named "api-keys" in your Firestore database</li>
-              <li>Add a document with ID "claude"</li>
-              <li>Add a field "value" with your Claude API key as the value</li>
-              <li>Set appropriate security rules to protect your API key</li>
-            </ol>
-          </div>
 
           <div className="flex justify-center">
             <button

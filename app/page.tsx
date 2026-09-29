@@ -2,14 +2,12 @@
 
 import Link from "next/link"
 import { PlayCircle, Terminal } from "lucide-react"
-import { useAuth } from "@/contexts/auth-context"
-import { useRouter } from "next/navigation"
-import { useEffect } from "react"
-import { placeholderScores } from "@/data/placeholder-scores"
+import { AUTH_ENABLED, useAuth } from "@/contexts/auth-context"
+import { useGame } from "@/contexts/game-context"
 
 export default function Home() {
   const { user } = useAuth()
-  const router = useRouter()
+  const { sessionStats } = useGame()
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[#121212] text-[#33FF33] relative overflow-hidden">
@@ -27,16 +25,16 @@ export default function Home() {
 
         <h2 className="text-2xl font-mono text-[#00FFFF] mb-10">HUMANS VS. AI v1.0</h2>
 
-        {/* Global Score - More Prominent and Central at Top with Animation */}
+        <div className="text-xs font-mono text-[#33FF33]/60 mb-2">SESSION SCORE · LOCAL ONLY</div>
         <div className="w-full flex justify-between items-center mb-12">
           <div className="text-center flex-1 p-8 rounded-xl transition-all duration-300 hover:bg-[#33FF33]/5">
             <div className="text-2xl mb-3 font-mono text-[#33FF33]/90">HUMANS</div>
-            <div className="text-7xl text-[#33FF33] font-bold font-mono glow-text animate-pulse-subtle">{placeholderScores.humanScore.toLocaleString()}</div>
+            <div className="text-7xl text-[#33FF33] font-bold font-mono glow-text animate-pulse-subtle">{sessionStats.humanTotal.toLocaleString()}</div>
           </div>
           <div className="h-32 w-px bg-[#33FF33]/30 mx-4"></div>
           <div className="text-center flex-1 p-8 rounded-xl transition-all duration-300 hover:bg-[#FF5555]/5">
             <div className="text-2xl mb-3 font-mono text-[#FF5555]/90">AI</div>
-            <div className="text-7xl text-[#FF5555] font-bold font-mono glow-text animate-pulse-subtle">{placeholderScores.aiScore.toLocaleString()}</div>
+            <div className="text-7xl text-[#FF5555] font-bold font-mono glow-text animate-pulse-subtle">{sessionStats.aiTotal.toLocaleString()}</div>
           </div>
         </div>
 
@@ -52,7 +50,7 @@ export default function Home() {
           PLAY NOW
         </Link>
 
-        {!user && (
+        {AUTH_ENABLED && !user && (
           <Link
             href="/auth"
             className="font-mono text-[#00FFFF] hover:text-[#00FFFF]/80 mt-4 text-sm"

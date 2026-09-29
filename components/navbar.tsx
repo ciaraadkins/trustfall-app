@@ -3,8 +3,8 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
-import { LogOut, User, Trophy, BarChart3, PlayCircle, Terminal, Settings } from "lucide-react"
-import { useAuth } from "@/contexts/auth-context"
+import { LogOut, User, Trophy, BarChart3, PlayCircle, Terminal } from "lucide-react"
+import { AUTH_ENABLED, useAuth } from "@/contexts/auth-context"
 
 const Navbar = () => {
   const { user, signOut } = useAuth()
@@ -20,8 +20,6 @@ const Navbar = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // Always show navbar, but we'll handle the home page differently in layout.tsx
 
   return (
     <div className="bg-[#1a1a1a] border-b border-[#33FF33]/30 p-3 sticky top-0 z-50">
@@ -56,10 +54,7 @@ const Navbar = () => {
             <span className={isMobile ? "text-xs" : ""}>PLAY</span>
           </Link>
 
-          {/* Removed MODELS from navigation per requirements */}
-
-          {user && (
-            <Link
+          <Link
               href="/summary"
               className={`flex items-center justify-center gap-1 font-mono text-sm ${
                 pathname === "/summary" ? "text-[#33FF33]" : "text-[#33FF33]/70 hover:text-[#33FF33]"
@@ -67,13 +62,13 @@ const Navbar = () => {
             >
               <BarChart3 className="w-4 h-4" />
               <span className={isMobile ? "text-xs" : ""}>RESULTS</span>
-            </Link>
-          )}
+          </Link>
         </div>
 
-        {/* User Section */}
+        {/* User Section (hidden while accounts are disabled) */}
+        {AUTH_ENABLED && (
         <div className={`${isMobile ? 'w-full mt-2 flex justify-center' : 'flex items-center gap-4'}`}>
-          {user ? (
+          {user && !user.isGuest ? (
             <>
               <div className="text-sm font-mono text-[#00FFFF] flex items-center gap-1">
                 <User className="w-4 h-4" />
@@ -97,6 +92,7 @@ const Navbar = () => {
             </Link>
           )}
         </div>
+        )}
       </div>
     </div>
   )
